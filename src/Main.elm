@@ -71,6 +71,11 @@ checkWord word chars =
             )
 
 
+flip : (a -> b -> c) -> b -> a -> c
+flip fun a b =
+    fun b a
+
+
 renderInputs : List String -> String -> String -> Html Msg
 renderInputs inputs userInp word =
     let
@@ -92,11 +97,15 @@ renderInputs inputs userInp word =
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
-                ((userInp
-                    |> String.toList
-                    |> List.map (\c -> div [ class "tile empty" ] [ text <| String.fromChar c ])
-                 )
-                    ++ List.repeat (5 - String.length userInp) (div [ class "tile empty" ] [])
+                (if List.length inputs < 6 then
+                    userInp
+                        |> String.toList
+                        |> List.map (\c -> [ text <| String.fromChar c ])
+                        |> flip List.append (List.repeat (5 - String.length userInp) [])
+                        |> List.map (\el -> div [ class "tile empty" ] el)
+
+                 else
+                    []
                 )
 
         renderEmptyWords : List (Html Msg)
@@ -163,9 +172,11 @@ renderKeyboard inputs word =
                             [ text <| String.fromChar c ]
                     )
 
+        half : Html Msg
         half =
             div [ class "half" ] []
 
+        txtBtn : Msg -> String -> Html Msg
         txtBtn msg txt =
             button [ class "one-and-a-half", onClick msg ] [ text txt ]
     in
@@ -220,7 +231,7 @@ update msg model =
 
         Submit ->
             ( if String.length model.usrInp == 5 then
-                { model | oldInps = List.append model.oldInps [ model.usrInp ], usrInp = "" }
+                { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "" }
 
               else
                 model
