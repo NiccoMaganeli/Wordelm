@@ -79,19 +79,16 @@ flip fun a b =
 renderInputs : List String -> String -> String -> Html Msg
 renderInputs inputs userInp word =
     let
+        tileWrapper : String -> List (Html Msg) -> Html Msg
+        tileWrapper state =
+            div [ class <| String.join " " [ "tile", state ] ]
+
         renderWord : List ( Char, State ) -> List (Html Msg)
         renderWord chars =
             chars
                 |> List.map
                     (\( c, st ) ->
-                        div
-                            [ class <|
-                                String.join " "
-                                    [ "tile"
-                                    , eval st
-                                    ]
-                            ]
-                            [ text <| String.fromChar c ]
+                        tileWrapper (eval st) [ text <| String.fromChar c ]
                     )
 
         renderUserInput : Html Msg
@@ -102,7 +99,7 @@ renderInputs inputs userInp word =
                         |> String.toList
                         |> List.map (\c -> [ text <| String.fromChar c ])
                         |> flip List.append (List.repeat (5 - String.length userInp) [])
-                        |> List.map (\el -> div [ class "tile empty" ] el)
+                        |> List.map (tileWrapper "empty")
 
                  else
                     []
@@ -110,7 +107,7 @@ renderInputs inputs userInp word =
 
         renderEmptyWords : List (Html Msg)
         renderEmptyWords =
-            List.repeat (5 - List.length inputs) (div [ class "row-board" ] (List.repeat 5 (div [ class "tile empty" ] [])))
+            List.repeat (5 - List.length inputs) (div [ class "row-board" ] (List.repeat 5 (tileWrapper "empty" [])))
     in
     div [ class "board" ]
         ((inputs
@@ -164,13 +161,16 @@ renderKeyboard inputs word =
         renderRow row =
             row
                 |> String.toList
-                |> List.map (\c -> ( c, Dict.get c knowSoFar ))
                 |> List.map
-                    (\( c, maybeSt ) ->
+                    (\c ->
                         button
-                            (onClick (OnClick c) :: checkState maybeSt)
+                            (onClick (OnClick c) :: checkState (Dict.get c knowSoFar))
                             [ text <| String.fromChar c ]
                     )
+
+        rowBtn : List (Html Msg) -> Html Msg
+        rowBtn =
+            div [ class "row-button" ]
 
         half : Html Msg
         half =
@@ -181,9 +181,9 @@ renderKeyboard inputs word =
             button [ class "one-and-a-half", onClick msg ] [ text txt ]
     in
     div [ id "keyboard" ]
-        [ div [ class "row-button" ] (renderRow "qwertyuiop")
-        , div [ class "row-button" ] (half :: renderRow "asdfghjkl" ++ [ half ])
-        , div [ class "row-button" ] (txtBtn Submit "ENTER" :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace "BKSP" ])
+        [ rowBtn <| renderRow "qwertyuiop"
+        , rowBtn <| half :: renderRow "asdfghjkl" ++ [ half ]
+        , rowBtn <| txtBtn Submit "ENTER" :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace "BKSP" ]
         ]
 
 
@@ -230,7 +230,7 @@ update msg model =
             )
 
         Submit ->
-            ( if String.length model.usrInp == 5 then
+            ( if String.length model.usrInp == 5 && List.length model.oldInps < 6 then
                 { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "" }
 
               else
