@@ -13,12 +13,13 @@ type alias Model =
     { usrInp : String
     , oldInps : List String
     , word : String
+    , stillGuessing : Bool
     }
 
 
 init : flags -> ( Model, Cmd Msg )
 init _ =
-    ( { usrInp = "", oldInps = [], word = "gorge" }, Cmd.none )
+    ( { usrInp = "", oldInps = [], word = "gorge", stillGuessing = True }, Cmd.none )
 
 
 top : Html Msg
@@ -60,14 +61,16 @@ checkWord word chars =
         |> List.map2 Tuple.pair chars
         |> List.map
             (\( c, w ) ->
-                if c == w then
-                    ( c, Correct )
+                ( c
+                , if c == w then
+                    Correct
 
-                else if List.member c wordList then
-                    ( c, Present )
+                  else if List.member c wordList then
+                    Present
 
-                else
-                    ( c, Absent )
+                  else
+                    Absent
+                )
             )
 
 
@@ -76,8 +79,8 @@ flip fun a b =
     fun b a
 
 
-renderInputs : List String -> String -> String -> Html Msg
-renderInputs inputs userInp word =
+renderInputs : Model -> Html Msg
+renderInputs model =
     let
         tileWrapper : String -> List (Html Msg) -> Html Msg
         tileWrapper state =
@@ -94,11 +97,11 @@ renderInputs inputs userInp word =
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
-                (if List.length inputs < 6 then
-                    userInp
+                (if List.length model.oldInps < 6 then
+                    model.usrInp
                         |> String.toList
                         |> List.map (\c -> [ text <| String.fromChar c ])
-                        |> flip List.append (List.repeat (5 - String.length userInp) [])
+                        |> flip List.append (List.repeat (5 - String.length model.usrInp) [])
                         |> List.map (tileWrapper "empty")
 
                  else
@@ -107,11 +110,14 @@ renderInputs inputs userInp word =
 
         renderEmptyWords : List (Html Msg)
         renderEmptyWords =
-            List.repeat (5 - List.length inputs) (div [ class "row-board" ] (List.repeat 5 (tileWrapper "empty" [])))
+            List.repeat (5 - List.length model.oldInps)
+                (div [ class "row-board" ]
+                    (List.repeat 5 (tileWrapper "empty" []))
+                )
     in
     div [ class "board" ]
-        ((inputs
-            |> List.map (renderWord << checkWord word << String.toList)
+        ((model.oldInps
+            |> List.map (renderWord << checkWord model.word << String.toList)
             |> List.map (\r -> div [ class "row-board" ] r)
          )
             ++ (renderUserInput :: renderEmptyWords)
@@ -120,18 +126,18 @@ renderInputs inputs userInp word =
 
 renderBoard : Model -> Html Msg
 renderBoard model =
-    div [ class "board-container" ]
-        [ renderInputs model.oldInps model.usrInp model.word
+    div [ id "board-container" ]
+        [ renderInputs model
         ]
 
 
-renderKeyboard : List String -> String -> Html Msg
-renderKeyboard inputs word =
+renderKeyboard : Model -> Html Msg
+renderKeyboard model =
     let
         knowSoFar : Dict Char State
         knowSoFar =
-            inputs
-                |> List.concatMap (checkWord word << String.toList)
+            model.oldInps
+                |> List.concatMap (checkWord model.word << String.toList)
                 |> List.foldl
                     (\( c, st ) d ->
                         case Dict.get c d of
@@ -154,8 +160,7 @@ renderKeyboard inputs word =
                     []
 
                 Just st ->
-                    [ class <| eval st
-                    ]
+                    [ class <| eval st ]
 
         renderRow : String -> List (Html Msg)
         renderRow row =
@@ -187,22 +192,19 @@ renderKeyboard inputs word =
         ]
 
 
-mid : Model -> Html Msg
+mid : Model -> List (Html Msg)
 mid model =
-    div []
-        [ renderBoard model
-        , renderKeyboard model.oldInps model.word
-        ]
+    [ renderBoard model
+    , renderKeyboard model
+    ]
 
 
 view : Model -> Document Msg
 view model =
     { title = "Wordle"
     , body =
-        [ div [ class "main" ]
-            [ top
-            , mid model
-            ]
+        [ div [ id "main" ]
+            (top :: mid model)
         ]
     }
 
@@ -216,11 +218,37 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        checkInput : Bool
+        checkInput =
+            model.usrInp
+                |> String.toList
+                |> List.map2 (==) (String.toList model.word)
+                |> List.filter identity
+                |> List.length
+                |> (/=) 5
+
+        validChar : List Char
+        validChar =
+            "qwertyuiopasdfghjklzxcvbnm"
+                |> String.toList
+    in
     case msg of
         OnClick c ->
+            let
+                inputIsFull : Bool
+                inputIsFull =
+                    String.length model.usrInp >= 5
+
+                invalidChar : Bool
+                invalidChar =
+                    validChar
+                        |> List.member c
+                        |> not
+            in
             ( { model
                 | usrInp =
-                    if String.length model.usrInp >= 5 then
+                    if not model.stillGuessing || invalidChar || inputIsFull then
                         model.usrInp
 
                     else
@@ -230,8 +258,17 @@ update msg model =
             )
 
         Submit ->
-            ( if String.length model.usrInp == 5 && List.length model.oldInps < 6 then
-                { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "" }
+            let
+                wordHasFiveLetter : Bool
+                wordHasFiveLetter =
+                    String.length model.usrInp == 5
+
+                lessThanSixOldInps : Bool
+                lessThanSixOldInps =
+                    List.length model.oldInps < 6
+            in
+            ( if model.stillGuessing && lessThanSixOldInps && wordHasFiveLetter then
+                { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "", stillGuessing = checkInput }
 
               else
                 model
