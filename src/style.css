@@ -5,6 +5,8 @@ body {
     margin: 0;
     padding: 0;
     overflow: auto;
+    font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 16px;
 }
 
 #main {
@@ -46,8 +48,10 @@ header .title {
 }
 
 .board {
-    width: 350px;
-    height: 420px;
+    height: 60vh;
+    width: 50vw;
+    max-width: 350px;
+    max-height: 420px;
     display: grid;
     grid-template-rows: repeat(6, 1fr);
     grid-gap: 5px;

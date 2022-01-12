@@ -1,5 +1,6 @@
 module Main exposing (main)
 
+import Array
 import Browser exposing (Document)
 import Browser.Events
 import Dict exposing (Dict)
@@ -7,6 +8,13 @@ import Html exposing (Html, button, div, header, text)
 import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode exposing (Decoder)
+import Random
+
+
+type alias Flags =
+    { seed : Int
+    , words : List String
+    }
 
 
 type alias Model =
@@ -14,12 +22,32 @@ type alias Model =
     , oldInps : List String
     , word : String
     , stillGuessing : Bool
+    , words : List String
     }
 
 
-init : flags -> ( Model, Cmd Msg )
-init _ =
-    ( { usrInp = "", oldInps = [], word = "gorge", stillGuessing = True }, Cmd.none )
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+    let
+        randomInt : Random.Generator Int
+        randomInt =
+            Random.int 0 (List.length flags.words - 1)
+
+        randomWord : String
+        randomWord =
+            Random.step randomInt (Random.initialSeed flags.seed)
+                |> Tuple.first
+                |> flip Array.get (Array.fromList flags.words)
+                |> Maybe.withDefault "aeiou"
+    in
+    ( { usrInp = ""
+      , oldInps = []
+      , word = randomWord
+      , stillGuessing = True
+      , words = flags.words
+      }
+    , Cmd.none
+    )
 
 
 top : Html Msg
@@ -266,8 +294,12 @@ update msg model =
                 lessThanSixOldInps : Bool
                 lessThanSixOldInps =
                     List.length model.oldInps < 6
+
+                validWord : Bool
+                validWord =
+                    List.member model.usrInp model.words
             in
-            ( if model.stillGuessing && lessThanSixOldInps && wordHasFiveLetter then
+            ( if model.stillGuessing && lessThanSixOldInps && wordHasFiveLetter && validWord then
                 { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "", stillGuessing = checkInput }
 
               else
@@ -311,7 +343,7 @@ subscriptions _ =
     Browser.Events.onKeyDown keyDecoder
 
 
-main : Program () Model Msg
+main : Program Flags Model Msg
 main =
     Browser.document
         { init = init

@@ -2,12 +2,12 @@
   "name": "wordelm",
   "version": "1.0.0",
   "description": "Wordle made in Elm just for fun",
-  "main": "index.js",
   "author": "Nicco Maganeli",
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "parcel index.html --port 8000"
+    "dev": "parcel index.html --port 8000",
+    "build": "parcel build index.html"
   },
   "devDependencies": {
     "@parcel/transformer-elm": "^2.1.1",
