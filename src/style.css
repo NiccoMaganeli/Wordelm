@@ -48,8 +48,8 @@ header .title {
 }
 
 .board {
-    height: 60vh;
-    width: 50vw;
+    height: 60vmin;
+    width: 50vmin;
     max-width: 350px;
     max-height: 420px;
     display: grid;

@@ -1,5 +1,5 @@
 import { Elm } from "./Main.elm";
-import { words } from "../constants/words";
+import { words } from "./words";
 
 const now = new Date();
 const year = now.getUTCFullYear();
