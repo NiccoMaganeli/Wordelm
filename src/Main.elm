@@ -8,21 +8,23 @@ import Html exposing (Html, button, div, header, text)
 import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode exposing (Decoder)
-import List.Extra
 import Random
+import Toast
 import Words as W
 
 
 type alias Flags =
-    { seed : Int
-    }
+    { seed : Int }
 
 
 type GameState
     = Guessing
     | Won
     | Loss
-    | Error String
+
+
+type alias ToastProperties =
+    { msg : String, err : Bool }
 
 
 type alias Model =
@@ -30,7 +32,18 @@ type alias Model =
     , attempts : List String
     , word : String
     , state : GameState
+    , toast : Toast.Tray ToastProperties
     }
+
+
+maxLetters : Int
+maxLetters =
+    5
+
+
+maxAttempts : Int
+maxAttempts =
+    6
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -51,6 +64,7 @@ init flags =
       , attempts = []
       , word = randomWord
       , state = Guessing
+      , toast = Toast.tray
       }
     , Cmd.none
     )
@@ -84,28 +98,74 @@ eval st =
             "absent"
 
 
-checkWord : String -> List Char -> List ( Char, LetterState )
+type alias CharState =
+    ( Char, LetterState )
+
+
+rebuildWord : List Char -> Dict Char LetterState -> List ( Char, LetterState )
+rebuildWord chars dict =
+    let
+        notHandled : Char -> List CharState -> Bool
+        notHandled c acc =
+            acc
+                |> List.map Tuple.first
+                |> List.member c
+                |> not
+    in
+    chars
+        |> List.foldl
+            (\c acc ->
+                if notHandled c acc then
+                    case Dict.get c dict of
+                        Just st ->
+                            acc ++ [ ( c, st ) ]
+
+                        Nothing ->
+                            acc ++ [ ( c, Absent ) ]
+
+                else
+                    acc ++ [ ( c, Absent ) ]
+            )
+            []
+
+
+checkWord : String -> List Char -> List CharState
 checkWord word chars =
     let
         wordList : List Char
         wordList =
             String.toList word
+
+        evalChar : Char -> Char -> CharState
+        evalChar c w =
+            ( c
+            , if c == w then
+                Correct
+
+              else if List.member c wordList then
+                Present
+
+              else
+                Absent
+            )
+
+        isHandled : CharState -> Dict Char LetterState -> Dict Char LetterState
+        isHandled ( c, st ) dict =
+            case Dict.get c dict of
+                Just _ ->
+                    if st == Correct then
+                        Dict.insert c st dict
+
+                    else
+                        dict
+
+                Nothing ->
+                    Dict.insert c st dict
     in
     wordList
-        |> List.map2 Tuple.pair chars
-        |> List.map
-            (\( c, w ) ->
-                ( c
-                , if c == w then
-                    Correct
-
-                  else if List.member c wordList then
-                    Present
-
-                  else
-                    Absent
-                )
-            )
+        |> List.map2 evalChar chars
+        |> List.foldl isHandled Dict.empty
+        |> rebuildWord chars
 
 
 flip : (a -> b -> c) -> b -> a -> c
@@ -120,7 +180,7 @@ renderInputs model =
         tileWrapper state =
             div [ class <| String.join " " [ "tile", state ] ]
 
-        renderWord : List ( Char, LetterState ) -> List (Html Msg)
+        renderWord : List CharState -> List (Html Msg)
         renderWord chars =
             chars
                 |> List.map
@@ -131,11 +191,11 @@ renderInputs model =
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
-                (if List.length model.attempts < 6 then
+                (if List.length model.attempts < maxAttempts then
                     model.usrInp
                         |> String.toList
                         |> List.map (\c -> [ text <| String.fromChar c ])
-                        |> flip List.append (List.repeat (5 - String.length model.usrInp) [])
+                        |> flip List.append (List.repeat (maxLetters - String.length model.usrInp) [])
                         |> List.map (tileWrapper "empty")
 
                  else
@@ -144,9 +204,9 @@ renderInputs model =
 
         renderEmptyWords : List (Html Msg)
         renderEmptyWords =
-            List.repeat (5 - List.length model.attempts)
+            List.repeat (maxAttempts - 1 - List.length model.attempts)
                 (div [ class "row-board" ]
-                    (List.repeat 5 (tileWrapper "empty" []))
+                    (List.repeat maxLetters (tileWrapper "empty" []))
                 )
     in
     div [ class "board" ]
@@ -226,34 +286,41 @@ renderKeyboard model =
         ]
 
 
-renderAlert : String -> Html Msg
-renderAlert msg =
-    div [ class "toaster" ] [ text msg ]
+toastConfig : Toast.Config Msg
+toastConfig =
+    Toast.config ToastMsg
+
+
+renderToastContainer : Model -> Html Msg
+renderToastContainer model =
+    let
+        renderToast : List (Html.Attribute Msg) -> Toast.Info ToastProperties -> Html Msg
+        renderToast _ toast =
+            div
+                [ class
+                    (if toast.content.err then
+                        "err-toast"
+
+                     else
+                        "toast"
+                    )
+                ]
+                [ text toast.content.msg ]
+    in
+    div [ class "toast-container" ] [ Toast.render renderToast model.toast toastConfig ]
 
 
 mid : Model -> List (Html Msg)
 mid model =
     [ renderBoard model
     , renderKeyboard model
+    , renderToastContainer model
     ]
-        ++ (case model.state of
-                Error msg ->
-                    [ renderAlert msg ]
-
-                Won ->
-                    [ renderAlert "Congratulations!" ]
-
-                Loss ->
-                    [ renderAlert "Almost!" ]
-
-                Guessing ->
-                    []
-           )
 
 
 view : Model -> Document Msg
 view model =
-    { title = "Wordle"
+    { title = "Wordelm"
     , body =
         [ div [ id "main" ]
             (top :: mid model)
@@ -265,6 +332,7 @@ type Msg
     = OnClick Char
     | Submit
     | BckSpace
+    | ToastMsg Toast.Msg
 
 
 isGuessing : GameState -> Bool
@@ -273,98 +341,125 @@ isGuessing gmSt =
         Guessing ->
             True
 
-        Error _ ->
-            True
-
         _ ->
             False
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+validateInput : String -> List String -> String -> Result String GameState
+validateInput word attempts inp =
+    if String.length inp < maxLetters then
+        Err "Not enough letters"
+
+    else if not <| List.member inp W.words then
+        Err "Not a valid word"
+
+    else if word == inp then
+        Ok Won
+
+    else if List.length attempts == (maxAttempts - 1) then
+        Ok Loss
+
+    else
+        Ok Guessing
+
+
+persistentToast : String -> GameState -> Model -> ( Model, Cmd Toast.Msg )
+persistentToast msg gmSt model =
+    let
+        ( toast, cmd ) =
+            Toast.add model.toast (Toast.persistent { msg = msg, err = False })
+    in
+    ( { model | toast = toast, state = gmSt }, cmd )
+
+
+winToast : Model -> ( Model, Cmd Toast.Msg )
+winToast =
+    persistentToast "Congratulations!" Won
+
+
+lossToast : Model -> ( Model, Cmd Toast.Msg )
+lossToast =
+    persistentToast "Almost!" Loss
+
+
+errToast : Model -> String -> ( Model, Cmd Toast.Msg )
+errToast model msg =
+    let
+        ( toast, cmd ) =
+            Toast.add model.toast (Toast.expireIn 2000 { msg = msg, err = True })
+    in
+    ( { model | toast = toast }, cmd )
+
+
+update : Msg -> Model -> ( Model, Cmd Toast.Msg )
 update msg model =
     case msg of
         OnClick c ->
             let
-                inputIsFull : Bool
-                inputIsFull =
-                    String.length model.usrInp == 5
-
-                validChar : List Char
-                validChar =
+                allValidChar : List Char
+                allValidChar =
                     "qwertyuiopasdfghjklzxcvbnm"
                         |> String.toList
 
-                invalidChar : Bool
-                invalidChar =
-                    validChar
-                        |> List.member c
-                        |> not
+                validChar : Char -> Bool
+                validChar chr =
+                    allValidChar
+                        |> List.member chr
             in
             ( { model
                 | usrInp =
-                    if (not <| isGuessing model.state) || inputIsFull || invalidChar then
+                    if not <| isGuessing model.state then
                         model.usrInp
 
                     else
-                        model.usrInp ++ String.fromChar c
+                        model.usrInp
+                            ++ String.fromChar c
+                            |> String.filter validChar
+                            |> String.slice 0 maxLetters
               }
             , Cmd.none
             )
 
         Submit ->
             let
-                lessThanSixAttempts : Bool
-                lessThanSixAttempts =
-                    List.length model.attempts < 6
+                result : Result String GameState
+                result =
+                    validateInput model.word model.attempts model.usrInp
 
-                wordHasFiveLetter : Maybe String
-                wordHasFiveLetter =
-                    if String.length model.usrInp == 5 then
-                        Nothing
-
-                    else
-                        Just "Not enough letters"
-
-                validWord : Maybe String
-                validWord =
-                    if List.member model.usrInp W.words then
-                        Nothing
-
-                    else
-                        Just "Not a valid word"
-
-                haveError : Maybe String
-                haveError =
-                    [ wordHasFiveLetter, validWord ]
-                        |> List.Extra.dropWhile ((==) Nothing)
-                        |> List.head
-                        |> Maybe.withDefault Nothing
-
-                checkInput : GameState
-                checkInput =
-                    if model.usrInp == model.word then
-                        Won
-
-                    else if List.length model.attempts == 6 then
-                        Loss
-
-                    else
-                        Guessing
+                startNewRound : ( Model, Cmd Toast.Msg ) -> ( Model, Cmd Toast.Msg )
+                startNewRound ( mdl, cmd ) =
+                    ( { mdl | attempts = mdl.attempts ++ [ mdl.usrInp ], usrInp = "" }, cmd )
             in
-            ( if isGuessing model.state && lessThanSixAttempts then
-                if haveError /= Nothing then
-                    { model | state = Error <| Maybe.withDefault "" haveError }
+            if isGuessing model.state then
+                case result of
+                    Ok gmSt ->
+                        (case gmSt of
+                            Won ->
+                                winToast model
 
-                else
-                    { model | attempts = model.attempts ++ [ model.usrInp ], usrInp = "", state = checkInput }
+                            Loss ->
+                                lossToast model
 
-              else
-                model
-            , Cmd.none
-            )
+                            Guessing ->
+                                ( model, Cmd.none )
+                        )
+                            |> startNewRound
+
+                    Err str ->
+                        errToast model str
+
+            else
+                ( model, Cmd.none )
 
         BckSpace ->
             ( { model | usrInp = String.dropRight 1 model.usrInp }, Cmd.none )
+
+        ToastMsg tmsg ->
+            let
+                ( toast, cmd ) =
+                    Toast.update tmsg model.toast
+            in
+            ( { model | toast = toast }, cmd )
 
 
 keyDecoder : Decoder Msg
@@ -401,6 +496,6 @@ main =
     Browser.document
         { init = init
         , view = view
-        , update = update
+        , update = \msg model -> Tuple.mapSecond (Cmd.map ToastMsg) (update msg model)
         , subscriptions = subscriptions
         }

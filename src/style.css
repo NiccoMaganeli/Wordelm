@@ -140,12 +140,16 @@ button:last-of-type {
     font-size: 12px;
 }
 
-.toaster {
-    z-index: 9000;
-    position: absolute;
-    top: 10%;
-    left: 50%;
-    transform: translate(-50%, 0);
+.toast {
+    pointer-events: none;
+    width: fit-content;
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    background-color: white;
+    padding: 1rem 1rem;
+}
+
+.err-toast {
     pointer-events: none;
     width: fit-content;
     border: 1px solid transparent;
@@ -153,7 +157,8 @@ button:last-of-type {
     background-color: white;
     padding: 1rem 1rem;
     animation-name: fadeOut;
-    animation-duration: 2s;
+    animation-duration: 3s;
+    animation-fill-mode: forwards;
 }
 
 @keyframes fadeOut {
@@ -164,4 +169,18 @@ button:last-of-type {
     100% {
         opacity: 0;
     }
+}
+
+.toast-container > div {
+    display: flex;
+    position: absolute;
+    z-index: 9000;
+    transform: translate(-50%, 0);
+    top: 10%;
+    left: 50%;
+    flex-direction: column-reverse;
+}
+
+.toast-container > div > div {
+    margin: 5px;
 }
