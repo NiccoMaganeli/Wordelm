@@ -8,21 +8,28 @@ import Html exposing (Html, button, div, header, text)
 import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode exposing (Decoder)
+import List.Extra
 import Random
+import Words as W
 
 
 type alias Flags =
     { seed : Int
-    , words : List String
     }
+
+
+type GameState
+    = Guessing
+    | Won
+    | Loss
+    | Error String
 
 
 type alias Model =
     { usrInp : String
-    , oldInps : List String
+    , attempts : List String
     , word : String
-    , stillGuessing : Bool
-    , words : List String
+    , state : GameState
     }
 
 
@@ -31,20 +38,19 @@ init flags =
     let
         randomInt : Random.Generator Int
         randomInt =
-            Random.int 0 (List.length flags.words - 1)
+            Random.int 0 (List.length W.words - 1)
 
         randomWord : String
         randomWord =
             Random.step randomInt (Random.initialSeed flags.seed)
                 |> Tuple.first
-                |> flip Array.get (Array.fromList flags.words)
+                |> flip Array.get (Array.fromList W.words)
                 |> Maybe.withDefault "aeiou"
     in
     ( { usrInp = ""
-      , oldInps = []
+      , attempts = []
       , word = randomWord
-      , stillGuessing = True
-      , words = flags.words
+      , state = Guessing
       }
     , Cmd.none
     )
@@ -59,13 +65,13 @@ top =
         ]
 
 
-type State
+type LetterState
     = Correct
     | Present
     | Absent
 
 
-eval : State -> String
+eval : LetterState -> String
 eval st =
     case st of
         Correct ->
@@ -78,7 +84,7 @@ eval st =
             "absent"
 
 
-checkWord : String -> List Char -> List ( Char, State )
+checkWord : String -> List Char -> List ( Char, LetterState )
 checkWord word chars =
     let
         wordList : List Char
@@ -114,7 +120,7 @@ renderInputs model =
         tileWrapper state =
             div [ class <| String.join " " [ "tile", state ] ]
 
-        renderWord : List ( Char, State ) -> List (Html Msg)
+        renderWord : List ( Char, LetterState ) -> List (Html Msg)
         renderWord chars =
             chars
                 |> List.map
@@ -125,7 +131,7 @@ renderInputs model =
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
-                (if List.length model.oldInps < 6 then
+                (if List.length model.attempts < 6 then
                     model.usrInp
                         |> String.toList
                         |> List.map (\c -> [ text <| String.fromChar c ])
@@ -138,13 +144,13 @@ renderInputs model =
 
         renderEmptyWords : List (Html Msg)
         renderEmptyWords =
-            List.repeat (5 - List.length model.oldInps)
+            List.repeat (5 - List.length model.attempts)
                 (div [ class "row-board" ]
                     (List.repeat 5 (tileWrapper "empty" []))
                 )
     in
     div [ class "board" ]
-        ((model.oldInps
+        ((model.attempts
             |> List.map (renderWord << checkWord model.word << String.toList)
             |> List.map (\r -> div [ class "row-board" ] r)
          )
@@ -162,9 +168,9 @@ renderBoard model =
 renderKeyboard : Model -> Html Msg
 renderKeyboard model =
     let
-        knowSoFar : Dict Char State
+        knowSoFar : Dict Char LetterState
         knowSoFar =
-            model.oldInps
+            model.attempts
                 |> List.concatMap (checkWord model.word << String.toList)
                 |> List.foldl
                     (\( c, st ) d ->
@@ -181,7 +187,7 @@ renderKeyboard model =
                     )
                     Dict.empty
 
-        checkState : Maybe State -> List (Html.Attribute Msg)
+        checkState : Maybe LetterState -> List (Html.Attribute Msg)
         checkState maybeSt =
             case maybeSt of
                 Nothing ->
@@ -216,8 +222,13 @@ renderKeyboard model =
     div [ id "keyboard" ]
         [ rowBtn <| renderRow "qwertyuiop"
         , rowBtn <| half :: renderRow "asdfghjkl" ++ [ half ]
-        , rowBtn <| txtBtn Submit "ENTER" :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace "BKSP" ]
+        , rowBtn <| txtBtn Submit "⏎" :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace "⌫" ]
         ]
+
+
+renderAlert : String -> Html Msg
+renderAlert msg =
+    div [ class "toaster" ] [ text msg ]
 
 
 mid : Model -> List (Html Msg)
@@ -225,6 +236,19 @@ mid model =
     [ renderBoard model
     , renderKeyboard model
     ]
+        ++ (case model.state of
+                Error msg ->
+                    [ renderAlert msg ]
+
+                Won ->
+                    [ renderAlert "Congratulations!" ]
+
+                Loss ->
+                    [ renderAlert "Almost!" ]
+
+                Guessing ->
+                    []
+           )
 
 
 view : Model -> Document Msg
@@ -241,32 +265,34 @@ type Msg
     = OnClick Char
     | Submit
     | BckSpace
-    | NoOp
+
+
+isGuessing : GameState -> Bool
+isGuessing gmSt =
+    case gmSt of
+        Guessing ->
+            True
+
+        Error _ ->
+            True
+
+        _ ->
+            False
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    let
-        checkInput : Bool
-        checkInput =
-            model.usrInp
-                |> String.toList
-                |> List.map2 (==) (String.toList model.word)
-                |> List.filter identity
-                |> List.length
-                |> (/=) 5
-
-        validChar : List Char
-        validChar =
-            "qwertyuiopasdfghjklzxcvbnm"
-                |> String.toList
-    in
     case msg of
         OnClick c ->
             let
                 inputIsFull : Bool
                 inputIsFull =
-                    String.length model.usrInp >= 5
+                    String.length model.usrInp == 5
+
+                validChar : List Char
+                validChar =
+                    "qwertyuiopasdfghjklzxcvbnm"
+                        |> String.toList
 
                 invalidChar : Bool
                 invalidChar =
@@ -276,7 +302,7 @@ update msg model =
             in
             ( { model
                 | usrInp =
-                    if not model.stillGuessing || invalidChar || inputIsFull then
+                    if (not <| isGuessing model.state) || inputIsFull || invalidChar then
                         model.usrInp
 
                     else
@@ -287,20 +313,50 @@ update msg model =
 
         Submit ->
             let
-                wordHasFiveLetter : Bool
+                lessThanSixAttempts : Bool
+                lessThanSixAttempts =
+                    List.length model.attempts < 6
+
+                wordHasFiveLetter : Maybe String
                 wordHasFiveLetter =
-                    String.length model.usrInp == 5
+                    if String.length model.usrInp == 5 then
+                        Nothing
 
-                lessThanSixOldInps : Bool
-                lessThanSixOldInps =
-                    List.length model.oldInps < 6
+                    else
+                        Just "Not enough letters"
 
-                validWord : Bool
+                validWord : Maybe String
                 validWord =
-                    List.member model.usrInp model.words
+                    if List.member model.usrInp W.words then
+                        Nothing
+
+                    else
+                        Just "Not a valid word"
+
+                haveError : Maybe String
+                haveError =
+                    [ wordHasFiveLetter, validWord ]
+                        |> List.Extra.dropWhile ((==) Nothing)
+                        |> List.head
+                        |> Maybe.withDefault Nothing
+
+                checkInput : GameState
+                checkInput =
+                    if model.usrInp == model.word then
+                        Won
+
+                    else if List.length model.attempts == 6 then
+                        Loss
+
+                    else
+                        Guessing
             in
-            ( if model.stillGuessing && lessThanSixOldInps && wordHasFiveLetter && validWord then
-                { model | oldInps = model.oldInps ++ [ model.usrInp ], usrInp = "", stillGuessing = checkInput }
+            ( if isGuessing model.state && lessThanSixAttempts then
+                if haveError /= Nothing then
+                    { model | state = Error <| Maybe.withDefault "" haveError }
+
+                else
+                    { model | attempts = model.attempts ++ [ model.usrInp ], usrInp = "", state = checkInput }
 
               else
                 model
@@ -310,32 +366,29 @@ update msg model =
         BckSpace ->
             ( { model | usrInp = String.dropRight 1 model.usrInp }, Cmd.none )
 
-        NoOp ->
-            ( model, Cmd.none )
-
 
 keyDecoder : Decoder Msg
 keyDecoder =
     let
-        toKey : String -> Msg
+        toKey : String -> Decoder Msg
         toKey str =
             case String.uncons str of
                 Just ( c, "" ) ->
-                    OnClick c
+                    Decode.succeed <| OnClick c
 
                 _ ->
                     if str == "Backspace" then
-                        BckSpace
+                        Decode.succeed BckSpace
 
                     else if str == "Enter" then
-                        Submit
+                        Decode.succeed Submit
 
                     else
-                        NoOp
+                        Decode.fail "invalid char"
     in
     Decode.string
         |> Decode.field "key"
-        |> Decode.map toKey
+        |> Decode.andThen toKey
 
 
 subscriptions : Model -> Sub Msg

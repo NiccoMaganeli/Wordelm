@@ -139,3 +139,29 @@ button:last-of-type {
     flex: 1.5;
     font-size: 12px;
 }
+
+.toaster {
+    z-index: 9000;
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translate(-50%, 0);
+    pointer-events: none;
+    width: fit-content;
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    background-color: white;
+    padding: 1rem 1rem;
+    animation-name: fadeOut;
+    animation-duration: 2s;
+}
+
+@keyframes fadeOut {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}

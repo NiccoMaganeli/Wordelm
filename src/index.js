@@ -1,5 +1,4 @@
 import { Elm } from "./Main.elm";
-import { words } from "./words";
 
 const now = new Date();
 const year = now.getUTCFullYear();
@@ -9,5 +8,5 @@ const day = now.getUTCDate();
 const seed = +new Date(year, month, day);
 
 Elm.Main.init({
-    flags: { seed, words },
+    flags: { seed },
 });
