@@ -6,8 +6,9 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "parcel index.html --port 8000",
-    "build": "rm -rf dist/ && parcel build index.html"
+    "clean": "rm -rf dist/",
+    "dev": "yarn clean && parcel index.html --port 8000",
+    "build": "yarn clean && parcel build index.html"
   },
   "devDependencies": {
     "@parcel/transformer-elm": "^2.1.1",

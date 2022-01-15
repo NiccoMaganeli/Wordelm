@@ -79,14 +79,14 @@ top =
         ]
 
 
-type LetterState
+type Letter
     = Correct
     | Present
     | Absent
 
 
-eval : LetterState -> String
-eval st =
+letterToString : Letter -> String
+letterToString st =
     case st of
         Correct ->
             "correct"
@@ -99,10 +99,10 @@ eval st =
 
 
 type alias CharState =
-    ( Char, LetterState )
+    ( Char, Letter )
 
 
-rebuildWord : List Char -> Dict Char LetterState -> List ( Char, LetterState )
+rebuildWord : List Char -> Dict Char Letter -> List CharState
 rebuildWord chars dict =
     let
         notHandled : Char -> List CharState -> Bool
@@ -149,7 +149,7 @@ checkWord word chars =
                 Absent
             )
 
-        isHandled : CharState -> Dict Char LetterState -> Dict Char LetterState
+        isHandled : CharState -> Dict Char Letter -> Dict Char Letter
         isHandled ( c, st ) dict =
             case Dict.get c dict of
                 Just _ ->
@@ -185,7 +185,7 @@ renderInputs model =
             chars
                 |> List.map
                     (\( c, st ) ->
-                        tileWrapper (eval st) [ text <| String.fromChar c ]
+                        tileWrapper (letterToString st) [ text <| String.fromChar c ]
                     )
 
         renderUserInput : Html Msg
@@ -221,14 +221,13 @@ renderInputs model =
 renderBoard : Model -> Html Msg
 renderBoard model =
     div [ id "board-container" ]
-        [ renderInputs model
-        ]
+        [ renderInputs model ]
 
 
 renderKeyboard : Model -> Html Msg
 renderKeyboard model =
     let
-        knowSoFar : Dict Char LetterState
+        knowSoFar : Dict Char Letter
         knowSoFar =
             model.attempts
                 |> List.concatMap (checkWord model.word << String.toList)
@@ -247,14 +246,14 @@ renderKeyboard model =
                     )
                     Dict.empty
 
-        checkState : Maybe LetterState -> List (Html.Attribute Msg)
+        checkState : Maybe Letter -> List (Html.Attribute Msg)
         checkState maybeSt =
             case maybeSt of
                 Nothing ->
                     []
 
                 Just st ->
-                    [ class <| eval st ]
+                    [ class <| letterToString st ]
 
         renderRow : String -> List (Html Msg)
         renderRow row =
