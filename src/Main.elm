@@ -4,11 +4,13 @@ import Array
 import Browser exposing (Document)
 import Browser.Events
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, header, text)
+import Html exposing (Html, button, div, h1, header, p, section, strong, text)
 import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick)
+import Icons
 import Json.Decode as Decode exposing (Decoder)
 import Random
+import Set exposing (Set)
 import Toast
 import Words as W
 
@@ -27,12 +29,18 @@ type alias ToastProperties =
     { msg : String, err : Bool }
 
 
+type Overlay
+    = Help
+    | Stats
+
+
 type alias Model =
     { usrInp : String
     , attempts : List String
     , word : String
     , state : GameState
     , toast : Toast.Tray ToastProperties
+    , overlay : Maybe Overlay
     }
 
 
@@ -65,6 +73,7 @@ init flags =
       , word = randomWord
       , state = Guessing
       , toast = Toast.tray
+      , overlay = Nothing
       }
     , Cmd.none
     )
@@ -73,99 +82,111 @@ init flags =
 top : Html Msg
 top =
     header []
-        [ div [] [ text "Help" ]
+        [ div [] [ button [ class "header-button", onClick OpenHelp ] [ Icons.helpCircle ] ]
         , div [ class "title" ] [ text "Wordle" ]
-        , div [] [ text "Configs" ]
+        , div [] [ button [ class "header-button", onClick OpenStats ] [ Icons.barChart2 ] ]
         ]
 
 
 type Letter
-    = Correct
-    | Present
-    | Absent
+    = Correct Char
+    | Present Char
+    | Absent Char
+    | NoState Char
 
 
-letterToString : Letter -> String
-letterToString st =
-    case st of
-        Correct ->
-            "correct"
-
-        Present ->
-            "present"
-
-        Absent ->
-            "absent"
+count : (Char -> Letter) -> List Letter -> Int
+count constructor letters =
+    letters
+        |> List.filter (\letter -> letter == (constructor <| letterChar letter))
+        |> List.length
 
 
-type alias CharState =
-    ( Char, Letter )
+countCorrect : List Letter -> Int
+countCorrect =
+    count Correct
 
 
-rebuildWord : List Char -> Dict Char Letter -> List CharState
-rebuildWord chars dict =
-    let
-        notHandled : Char -> List CharState -> Bool
-        notHandled c acc =
-            acc
-                |> List.map Tuple.first
-                |> List.member c
-                |> not
-    in
-    chars
-        |> List.foldl
-            (\c acc ->
-                if notHandled c acc then
-                    case Dict.get c dict of
-                        Just st ->
-                            acc ++ [ ( c, st ) ]
+countPresent : List Letter -> Int
+countPresent =
+    count Present
 
-                        Nothing ->
-                            acc ++ [ ( c, Absent ) ]
 
-                else
-                    acc ++ [ ( c, Absent ) ]
+safeGet : comparable -> b -> Dict comparable b -> b
+safeGet val default dict =
+    dict
+        |> Dict.get val
+        |> Maybe.withDefault default
+
+
+removeExtraPresent : Dict Char Int -> List Letter -> List Letter
+removeExtraPresent occur letters =
+    letters
+        |> List.map
+            (\letter ->
+                case letter of
+                    Present c ->
+                        if countCorrect letters >= safeGet c 0 occur then
+                            Absent c
+
+                        else
+                            letter
+
+                    _ ->
+                        letter
             )
-            []
 
 
-checkWord : String -> List Char -> List CharState
+removePresent : Dict Char Int -> List Letter -> List Letter
+removePresent occur =
+    List.foldl
+        (\letter acc ->
+            case letter of
+                Present c ->
+                    if countPresent acc >= safeGet c 0 occur then
+                        acc ++ [ Absent c ]
+
+                    else
+                        acc ++ [ letter ]
+
+                _ ->
+                    acc ++ [ letter ]
+        )
+        []
+
+
+checkWord : String -> List Char -> List Letter
 checkWord word chars =
     let
         wordList : List Char
         wordList =
             String.toList word
 
-        evalChar : Char -> Char -> CharState
+        evalChar : Char -> Char -> Letter
         evalChar c w =
-            ( c
-            , if c == w then
+            (if c == w then
                 Correct
 
-              else if List.member c wordList then
+             else if List.member c wordList then
                 Present
 
-              else
+             else
                 Absent
             )
+                c
 
-        isHandled : CharState -> Dict Char Letter -> Dict Char Letter
-        isHandled ( c, st ) dict =
-            case Dict.get c dict of
-                Just _ ->
-                    if st == Correct then
-                        Dict.insert c st dict
+        increase : Maybe Int -> Maybe Int
+        increase =
+            Just << (+) 1 << Maybe.withDefault 0
 
-                    else
-                        dict
-
-                Nothing ->
-                    Dict.insert c st dict
+        occurences : Dict Char Int
+        occurences =
+            List.foldl (\c -> Dict.update c increase) Dict.empty wordList
     in
     wordList
         |> List.map2 evalChar chars
-        |> List.foldl isHandled Dict.empty
-        |> rebuildWord chars
+        |> removeExtraPresent occurences
+        |> removePresent occurences
 
 
 flip : (a -> b -> c) -> b -> a -> c
@@ -173,21 +194,34 @@ flip fun a b =
     fun b a
 
 
+tileWrapper : String -> List (Html Msg) -> Html Msg
+tileWrapper state =
+    div [ class <| String.join " " [ "tile", state ] ]
+
+
+renderWord : List Letter -> List (Html Msg)
+renderWord chars =
+    chars
+        |> List.map
+            (\letter ->
+                case letter of
+                    Correct c ->
+                        tileWrapper "correct" [ text <| String.fromChar c ]
+
+                    Present c ->
+                        tileWrapper "present" [ text <| String.fromChar c ]
+
+                    Absent c ->
+                        tileWrapper "absent" [ text <| String.fromChar c ]
+
+                    NoState c ->
+                        tileWrapper "no-state" [ text <| String.fromChar c ]
+            )
+
+
 renderInputs : Model -> Html Msg
 renderInputs model =
     let
-        tileWrapper : String -> List (Html Msg) -> Html Msg
-        tileWrapper state =
-            div [ class <| String.join " " [ "tile", state ] ]
-
-        renderWord : List CharState -> List (Html Msg)
-        renderWord chars =
-            chars
-                |> List.map
-                    (\( c, st ) ->
-                        tileWrapper (letterToString st) [ text <| String.fromChar c ]
-                    )
-
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
@@ -224,6 +258,32 @@ renderBoard model =
         [ renderInputs model ]
 
 
+letterChar : Letter -> Char
+letterChar letter =
+    case letter of
+        Correct c ->
+            c
+
+        Present c ->
+            c
+
+        Absent c ->
+            c
+
+        NoState c ->
+            c
+
+
+isCorrect : Letter -> Bool
+isCorrect letter =
+    case letter of
+        Correct _ ->
+            True
+
+        _ ->
+            False
+
+
 renderKeyboard : Model -> Html Msg
 renderKeyboard model =
     let
@@ -232,17 +292,22 @@ renderKeyboard model =
             model.attempts
                 |> List.concatMap (checkWord model.word << String.toList)
                 |> List.foldl
-                    (\( c, st ) d ->
-                        case Dict.get c d of
+                    (\letter d ->
+                        let
+                            chr : Char
+                            chr =
+                                letterChar letter
+                        in
+                        case Dict.get chr d of
                             Nothing ->
-                                Dict.insert c st d
+                                Dict.insert chr letter d
 
-                            Just oldSt ->
-                                if oldSt == Correct then
+                            Just oldLetter ->
+                                if isCorrect oldLetter then
                                     d
 
                                 else
-                                    Dict.insert c st d
+                                    Dict.insert chr letter d
                     )
                     Dict.empty
 
@@ -253,7 +318,21 @@ renderKeyboard model =
                     []
 
                 Just st ->
-                    [ class <| letterToString st ]
+                    (case st of
+                        Correct _ ->
+                            "correct"
+
+                        Present _ ->
+                            "present"
+
+                        Absent _ ->
+                            "absent"
+
+                        NoState _ ->
+                            "no-state"
+                    )
+                        |> class
+                        |> List.singleton
 
         renderRow : String -> List (Html Msg)
         renderRow row =
@@ -262,7 +341,7 @@ renderKeyboard model =
                 |> List.map
                     (\c ->
                         button
-                            (onClick (OnClick c) :: checkState (Dict.get c knowSoFar))
+                            (onClick (OnClick c) :: class "keyboard-button" :: checkState (Dict.get c knowSoFar))
                             [ text <| String.fromChar c ]
                     )
 
@@ -276,7 +355,7 @@ renderKeyboard model =
 
         txtBtn : Msg -> String -> Html Msg
         txtBtn msg txt =
-            button [ class "one-and-a-half", onClick msg ] [ text txt ]
+            button [ class "one-and-a-half keyboard-button", onClick msg ] [ text txt ]
     in
     div [ id "keyboard" ]
         [ rowBtn <| renderRow "qwertyuiop"
@@ -309,12 +388,82 @@ renderToastContainer model =
     div [ class "toast-container" ] [ Toast.render renderToast model.toast toastConfig ]
 
 
+type ExampleType
+    = CorrectEx
+    | PresentEx
+    | AbsentEx
+
+
+renderExample : List Letter -> Char -> ExampleType -> Html Msg
+renderExample letters c example =
+    let
+        exampleType : String
+        exampleType =
+            case example of
+                CorrectEx ->
+                    " is in the word and in the correct spot."
+
+                PresentEx ->
+                    " is in the word but in the wrong spot."
+
+                AbsentEx ->
+                    " is not in the word in any spot."
+    in
+    div [ class "example" ]
+        [ div [ class "row-board" ] (renderWord letters)
+        , p [] [ text "The letter ", strong [] [ text <| String.fromChar c ], text exampleType ]
+        ]
+
+
+renderHelp : Html Msg
+renderHelp =
+    div [ class "help-overlay" ]
+        [ div [ class "content" ]
+            [ header [ class "help-header" ]
+                [ h1 [] [ text "how to play" ]
+                , button [ class "header-button", onClick CloseOverlay ] [ Icons.x ]
+                ]
+            , section []
+                [ div [ class "instructions" ]
+                    [ p [] [ text "Guess the ", strong [] [ text "WORDLE" ], text " in 6 tries." ]
+                    , p [] [ text "Each guess must be a valid 5 letter word. Hit the enter button to submit." ]
+                    , p [] [ text "After each guess, the color of the tiles will change to show how close your guess was to the word." ]
+                    , div [ class "examples" ]
+                        [ p [] [ strong [] [ text "Examples" ] ]
+                        , renderExample (Correct 'w' :: (List.map NoState <| String.toList "eary")) 'W' CorrectEx
+                        , renderExample (NoState 'p' :: Present 'i' :: (List.map NoState <| String.toList "lls")) 'I' PresentEx
+                        , renderExample ((List.map NoState <| String.toList "vag") ++ [ Absent 'u', NoState 'e' ]) 'U' AbsentEx
+                        ]
+                    , p [] [ strong [] [ text "A new WORDLE will be available each day!" ] ]
+                    ]
+                ]
+            ]
+        ]
+
+
+renderStats : Model -> Html Msg
+renderStats _ =
+    div [] []
+
+
 mid : Model -> List (Html Msg)
 mid model =
     [ renderBoard model
     , renderKeyboard model
     , renderToastContainer model
     ]
+        ++ (case model.overlay of
+                Just popUp ->
+                    case popUp of
+                        Help ->
+                            [ renderHelp ]
+
+                        Stats ->
+                            [ renderStats model ]
+
+                Nothing ->
+                    []
+           )
 
 
 view : Model -> Document Msg
@@ -332,6 +481,9 @@ type Msg
     | Submit
     | BckSpace
     | ToastMsg Toast.Msg
+    | OpenHelp
+    | OpenStats
+    | CloseOverlay
 
 
 isGuessing : GameState -> Bool
@@ -395,15 +547,16 @@ update msg model =
     case msg of
         OnClick c ->
             let
-                allValidChar : List Char
+                allValidChar : Set Char
                 allValidChar =
                     "qwertyuiopasdfghjklzxcvbnm"
                         |> String.toList
+                        |> Set.fromList
 
                 validChar : Char -> Bool
                 validChar chr =
                     allValidChar
-                        |> List.member chr
+                        |> Set.member chr
             in
             ( { model
                 | usrInp =
@@ -459,6 +612,15 @@ update msg model =
                     Toast.update tmsg model.toast
             in
             ( { model | toast = toast }, cmd )
+
+        OpenHelp ->
+            ( { model | overlay = Just Help }, Cmd.none )
+
+        OpenStats ->
+            ( { model | overlay = Just Stats }, Cmd.none )
+
+        CloseOverlay ->
+            ( { model | overlay = Nothing }, Cmd.none )
 
 
 keyDecoder : Decoder Msg
