@@ -105,10 +105,8 @@ init flags =
         gameHistory : GameHistory
         gameHistory =
             flags.gameHistory
-                |> Debug.log "GameHistory Input"
                 |> Maybe.andThen (Result.toMaybe << Decode.decodeString gameHistoryDecoder)
                 |> Maybe.withDefault initGameHistory
-                |> Debug.log "GameHistory Output"
     in
     ( { usrInp = ""
       , attempts = []
@@ -182,20 +180,21 @@ removeExtraPresent occur letters =
 
 removePresent : Dict Char Int -> List Letter -> List Letter
 removePresent occur =
-    List.foldl
-        (\letter acc ->
-            case letter of
-                Present c ->
-                    if countPresent acc >= safeGet c 0 occur then
-                        acc ++ [ Absent c ]
+    List.reverse
+        << List.foldl
+            (\letter acc ->
+                case letter of
+                    Present c ->
+                        if countPresent acc >= safeGet c 0 occur then
+                            Absent c :: acc
 
-                    else
-                        acc ++ [ letter ]
+                        else
+                            letter :: acc
 
-                _ ->
-                    acc ++ [ letter ]
-        )
-        []
+                    _ ->
+                        letter :: acc
+            )
+            []
 
 
 checkWord : String -> List Char -> List Letter
@@ -224,7 +223,7 @@ checkWord word chars =
 
         occurences : Dict Char Int
         occurences =
-            List.foldl (\c -> Dict.update c increase) Dict.empty wordList
+            List.foldl (flip Dict.update increase) Dict.empty wordList
     in
     wordList
         |> List.map2 evalChar chars
@@ -276,7 +275,7 @@ renderInputs model =
                 (if List.length model.attempts < maxAttempts then
                     model.usrInp
                         |> String.toList
-                        |> List.map (\c -> charText c)
+                        |> List.map charText
                         |> flip List.append (List.repeat (maxLetters - String.length model.usrInp) [])
                         |> List.map (tileWrapper "empty")
 
@@ -294,7 +293,7 @@ renderInputs model =
     div [ class "board" ]
         ((model.attempts
             |> List.map (renderWord << checkWord model.word << String.toList)
-            |> List.map (\r -> div [ class "row-board" ] r)
+            |> List.map (div [ class "row-board" ])
          )
             ++ (renderUserInput :: renderEmptyWords)
         )
@@ -603,7 +602,7 @@ updateWin model =
             model.gameHistory.perAttempts
                 |> List.indexedMap
                     (\i n ->
-                        if i == List.length model.attempts then
+                        if (i + 1) == List.length model.attempts then
                             n + 1
 
                         else
@@ -660,11 +659,12 @@ update msg model =
             if isGuessing model.state then
                 case result of
                     Ok gmSt ->
-                        (case gmSt of
+                        case gmSt of
                             Won ->
                                 let
                                     ( winModel, winCmd ) =
                                         winToast model
+                                            |> startNewRound
                                             |> Tuple.mapFirst updateWin
                                 in
                                 ( winModel, Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel.gameHistory ] )
@@ -673,14 +673,14 @@ update msg model =
                                 let
                                     ( lossModel, lossCmd ) =
                                         lossToast model
+                                            |> startNewRound
                                             |> Tuple.mapFirst updateLoss
                                 in
                                 ( lossModel, Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel.gameHistory ] )
 
                             Guessing ->
                                 ( model, Cmd.none )
-                        )
-                            |> startNewRound
+                                    |> startNewRound
 
                     Err str ->
                         errToast model str
@@ -733,8 +733,13 @@ keyDecoder =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Browser.Events.onKeyDown keyDecoder
+subscriptions model =
+    case model.overlay of
+        Nothing ->
+            Browser.Events.onKeyDown keyDecoder
+
+        Just _ ->
+            Sub.none
 
 
 main : Program Flags Model Msg
