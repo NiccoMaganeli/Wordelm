@@ -1,4 +1,4 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Array
 import Browser exposing (Document)
@@ -9,14 +9,24 @@ import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick)
 import Icons
 import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 import Random
 import Set exposing (Set)
 import Toast
 import Words as W
 
 
+port saveGameHistory : String -> Cmd msg
+
+
+type alias GameHistory =
+    { played : Int, perAttempts : List Int }
+
+
 type alias Flags =
-    { seed : Int }
+    { seed : Int
+    , gameHistory : Maybe String
+    }
 
 
 type GameState
@@ -34,6 +44,22 @@ type Overlay
     | Stats
 
 
+gameHistoryDecoder : Decoder GameHistory
+gameHistoryDecoder =
+    Decode.map2 GameHistory
+        (Decode.field "played" Decode.int)
+        (Decode.field "perAttempts" (Decode.list Decode.int))
+
+
+encodeGameHistory : GameHistory -> String
+encodeGameHistory gameHistory =
+    [ ( "played", Encode.int gameHistory.played )
+    , ( "perAttempts", Encode.list Encode.int gameHistory.perAttempts )
+    ]
+        |> Encode.object
+        |> Encode.encode 0
+
+
 type alias Model =
     { usrInp : String
     , attempts : List String
@@ -41,6 +67,7 @@ type alias Model =
     , state : GameState
     , toast : Toast.Tray ToastProperties
     , overlay : Maybe Overlay
+    , gameHistory : GameHistory
     }
 
 
@@ -52,6 +79,13 @@ maxLetters =
 maxAttempts : Int
 maxAttempts =
     6
+
+
+initGameHistory : GameHistory
+initGameHistory =
+    { played = 0
+    , perAttempts = List.repeat 6 0
+    }
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -67,6 +101,14 @@ init flags =
                 |> Tuple.first
                 |> flip Array.get (Array.fromList W.words)
                 |> Maybe.withDefault "aeiou"
+
+        gameHistory : GameHistory
+        gameHistory =
+            flags.gameHistory
+                |> Debug.log "GameHistory Input"
+                |> Maybe.andThen (Result.toMaybe << Decode.decodeString gameHistoryDecoder)
+                |> Maybe.withDefault initGameHistory
+                |> Debug.log "GameHistory Output"
     in
     ( { usrInp = ""
       , attempts = []
@@ -74,6 +116,7 @@ init flags =
       , state = Guessing
       , toast = Toast.tray
       , overlay = Nothing
+      , gameHistory = gameHistory
       }
     , Cmd.none
     )
@@ -199,6 +242,11 @@ tileWrapper state =
     div [ class <| String.join " " [ "tile", state ] ]
 
 
+charText : Char -> List (Html Msg)
+charText =
+    List.singleton << text << String.fromChar
+
+
 renderWord : List Letter -> List (Html Msg)
 renderWord chars =
     chars
@@ -206,16 +254,16 @@ renderWord chars =
             (\letter ->
                 case letter of
                     Correct c ->
-                        tileWrapper "correct" [ text <| String.fromChar c ]
+                        tileWrapper "correct" (charText c)
 
                     Present c ->
-                        tileWrapper "present" [ text <| String.fromChar c ]
+                        tileWrapper "present" (charText c)
 
                     Absent c ->
-                        tileWrapper "absent" [ text <| String.fromChar c ]
+                        tileWrapper "absent" (charText c)
 
                     NoState c ->
-                        tileWrapper "no-state" [ text <| String.fromChar c ]
+                        tileWrapper "no-state" (charText c)
             )
 
 
@@ -228,7 +276,7 @@ renderInputs model =
                 (if List.length model.attempts < maxAttempts then
                     model.usrInp
                         |> String.toList
-                        |> List.map (\c -> [ text <| String.fromChar c ])
+                        |> List.map (\c -> charText c)
                         |> flip List.append (List.repeat (maxLetters - String.length model.usrInp) [])
                         |> List.map (tileWrapper "empty")
 
@@ -342,7 +390,7 @@ renderKeyboard model =
                     (\c ->
                         button
                             (onClick (OnClick c) :: class "keyboard-button" :: checkState (Dict.get c knowSoFar))
-                            [ text <| String.fromChar c ]
+                            (charText c)
                     )
 
         rowBtn : List (Html Msg) -> Html Msg
@@ -411,7 +459,7 @@ renderExample letters c example =
     in
     div [ class "example" ]
         [ div [ class "row-board" ] (renderWord letters)
-        , p [] [ text "The letter ", strong [] [ text <| String.fromChar c ], text exampleType ]
+        , p [] [ text "The letter ", strong [] (charText c), text exampleType ]
         ]
 
 
@@ -453,8 +501,8 @@ mid model =
     , renderToastContainer model
     ]
         ++ (case model.overlay of
-                Just popUp ->
-                    case popUp of
+                Just overlay ->
+                    case overlay of
                         Help ->
                             [ renderHelp ]
 
@@ -529,8 +577,8 @@ winToast =
 
 
 lossToast : Model -> ( Model, Cmd Toast.Msg )
-lossToast =
-    persistentToast "Almost!" Loss
+lossToast model =
+    persistentToast (String.join " " [ "Word was", model.word ++ "." ]) Loss model
 
 
 errToast : Model -> String -> ( Model, Cmd Toast.Msg )
@@ -540,6 +588,34 @@ errToast model msg =
             Toast.add model.toast (Toast.expireIn 2000 { msg = msg, err = True })
     in
     ( { model | toast = toast }, cmd )
+
+
+updateGameHistory : Int -> List Int -> Model -> Model
+updateGameHistory played perAttempts model =
+    { model | gameHistory = { played = played + 1, perAttempts = perAttempts } }
+
+
+updateWin : Model -> Model
+updateWin model =
+    let
+        newPerAttempts : List Int
+        newPerAttempts =
+            model.gameHistory.perAttempts
+                |> List.indexedMap
+                    (\i n ->
+                        if i == List.length model.attempts then
+                            n + 1
+
+                        else
+                            n
+                    )
+    in
+    updateGameHistory model.gameHistory.played newPerAttempts model
+
+
+updateLoss : Model -> Model
+updateLoss model =
+    updateGameHistory model.gameHistory.played model.gameHistory.perAttempts model
 
 
 update : Msg -> Model -> ( Model, Cmd Toast.Msg )
@@ -554,9 +630,8 @@ update msg model =
                         |> Set.fromList
 
                 validChar : Char -> Bool
-                validChar chr =
-                    allValidChar
-                        |> Set.member chr
+                validChar =
+                    flip Set.member allValidChar
             in
             ( { model
                 | usrInp =
@@ -587,10 +662,20 @@ update msg model =
                     Ok gmSt ->
                         (case gmSt of
                             Won ->
-                                winToast model
+                                let
+                                    ( winModel, winCmd ) =
+                                        winToast model
+                                            |> Tuple.mapFirst updateWin
+                                in
+                                ( winModel, Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel.gameHistory ] )
 
                             Loss ->
-                                lossToast model
+                                let
+                                    ( lossModel, lossCmd ) =
+                                        lossToast model
+                                            |> Tuple.mapFirst updateLoss
+                                in
+                                ( lossModel, Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel.gameHistory ] )
 
                             Guessing ->
                                 ( model, Cmd.none )
