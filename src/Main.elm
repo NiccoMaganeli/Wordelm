@@ -20,7 +20,11 @@ port saveGameHistory : String -> Cmd msg
 
 
 type alias GameHistory =
-    { played : Int, perAttempts : List Int }
+    { played : Int
+    , perAttempts : List Int
+    , seed : Int
+    , attempts : List String
+    }
 
 
 type alias Flags =
@@ -46,15 +50,19 @@ type Overlay
 
 gameHistoryDecoder : Decoder GameHistory
 gameHistoryDecoder =
-    Decode.map2 GameHistory
+    Decode.map4 GameHistory
         (Decode.field "played" Decode.int)
         (Decode.field "perAttempts" (Decode.list Decode.int))
+        (Decode.field "seed" Decode.int)
+        (Decode.field "attempts" (Decode.list Decode.string))
 
 
-encodeGameHistory : GameHistory -> String
-encodeGameHistory gameHistory =
+encodeGameHistory : GameHistory -> List String -> String
+encodeGameHistory gameHistory attempts =
     [ ( "played", Encode.int gameHistory.played )
     , ( "perAttempts", Encode.list Encode.int gameHistory.perAttempts )
+    , ( "attempts", Encode.list Encode.string attempts )
+    , ( "seed", Encode.int gameHistory.seed )
     ]
         |> Encode.object
         |> Encode.encode 0
@@ -81,10 +89,12 @@ maxAttempts =
     6
 
 
-initGameHistory : GameHistory
-initGameHistory =
+initGameHistory : Int -> GameHistory
+initGameHistory seed =
     { played = 0
-    , perAttempts = List.repeat 6 0
+    , perAttempts = List.repeat maxAttempts 0
+    , attempts = []
+    , seed = seed
     }
 
 
@@ -106,12 +116,31 @@ init flags =
         gameHistory =
             flags.gameHistory
                 |> Maybe.andThen (Result.toMaybe << Decode.decodeString gameHistoryDecoder)
-                |> Maybe.withDefault initGameHistory
+                |> Maybe.withDefault (initGameHistory flags.seed)
+
+        attempts : List String
+        attempts =
+            if gameHistory.seed == flags.seed then
+                gameHistory.attempts
+
+            else
+                []
+
+        state : GameState
+        state =
+            if List.any ((==) randomWord) attempts then
+                Won
+
+            else if List.length attempts == 6 then
+                Loss
+
+            else
+                Guessing
     in
     ( { usrInp = ""
-      , attempts = []
+      , attempts = attempts
       , word = randomWord
-      , state = Guessing
+      , state = state
       , toast = Toast.tray
       , overlay = Nothing
       , gameHistory = gameHistory
@@ -123,9 +152,9 @@ init flags =
 top : Html Msg
 top =
     header []
-        [ div [] [ button [ class "header-button", onClick OpenHelp ] [ Icons.helpCircle ] ]
+        [ div [] [ button [ class "header-button", onClick <| OpenOverlay Help ] [ Icons.helpCircle ] ]
         , div [ class "title" ] [ text "Wordle" ]
-        , div [] [ button [ class "header-button", onClick OpenStats ] [ Icons.barChart2 ] ]
+        , div [] [ button [ class "header-button", onClick <| OpenOverlay Stats ] [ Icons.barChart2 ] ]
         ]
 
 
@@ -253,16 +282,16 @@ renderWord chars =
             (\letter ->
                 case letter of
                     Correct c ->
-                        tileWrapper "correct" (charText c)
+                        tileWrapper "correct" <| charText c
 
                     Present c ->
-                        tileWrapper "present" (charText c)
+                        tileWrapper "present" <| charText c
 
                     Absent c ->
-                        tileWrapper "absent" (charText c)
+                        tileWrapper "absent" <| charText c
 
                     NoState c ->
-                        tileWrapper "no-state" (charText c)
+                        tileWrapper "no-state" <| charText c
             )
 
 
@@ -300,9 +329,8 @@ renderInputs model =
 
 
 renderBoard : Model -> Html Msg
-renderBoard model =
-    div [ id "board-container" ]
-        [ renderInputs model ]
+renderBoard =
+    div [ id "board-container" ] << List.singleton << renderInputs
 
 
 letterChar : Letter -> Char
@@ -528,8 +556,7 @@ type Msg
     | Submit
     | BckSpace
     | ToastMsg Toast.Msg
-    | OpenHelp
-    | OpenStats
+    | OpenOverlay Overlay
     | CloseOverlay
 
 
@@ -589,9 +616,11 @@ errToast model msg =
     ( { model | toast = toast }, cmd )
 
 
-updateGameHistory : Int -> List Int -> Model -> Model
-updateGameHistory played perAttempts model =
-    { model | gameHistory = { played = played + 1, perAttempts = perAttempts } }
+updateGameHistory : List Int -> Model -> Model
+updateGameHistory perAttempts ({ gameHistory } as model) =
+    { model
+        | gameHistory = { gameHistory | played = gameHistory.played + 1, perAttempts = perAttempts }
+    }
 
 
 updateWin : Model -> Model
@@ -609,12 +638,12 @@ updateWin model =
                             n
                     )
     in
-    updateGameHistory model.gameHistory.played newPerAttempts model
+    updateGameHistory newPerAttempts model
 
 
 updateLoss : Model -> Model
 updateLoss model =
-    updateGameHistory model.gameHistory.played model.gameHistory.perAttempts model
+    updateGameHistory model.gameHistory.perAttempts model
 
 
 update : Msg -> Model -> ( Model, Cmd Toast.Msg )
@@ -667,7 +696,9 @@ update msg model =
                                             |> startNewRound
                                             |> Tuple.mapFirst updateWin
                                 in
-                                ( winModel, Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel.gameHistory ] )
+                                ( winModel
+                                , Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel.gameHistory winModel.attempts ]
+                                )
 
                             Loss ->
                                 let
@@ -676,11 +707,18 @@ update msg model =
                                             |> startNewRound
                                             |> Tuple.mapFirst updateLoss
                                 in
-                                ( lossModel, Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel.gameHistory ] )
+                                ( lossModel
+                                , Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel.gameHistory lossModel.attempts ]
+                                )
 
                             Guessing ->
-                                ( model, Cmd.none )
-                                    |> startNewRound
+                                let
+                                    ( guessingModel, guessingCmd ) =
+                                        startNewRound ( model, Cmd.none )
+                                in
+                                ( guessingModel
+                                , Cmd.batch [ guessingCmd, saveGameHistory <| encodeGameHistory guessingModel.gameHistory guessingModel.attempts ]
+                                )
 
                     Err str ->
                         errToast model str
@@ -698,11 +736,8 @@ update msg model =
             in
             ( { model | toast = toast }, cmd )
 
-        OpenHelp ->
-            ( { model | overlay = Just Help }, Cmd.none )
-
-        OpenStats ->
-            ( { model | overlay = Just Stats }, Cmd.none )
+        OpenOverlay overlay ->
+            ( { model | overlay = Just overlay }, Cmd.none )
 
         CloseOverlay ->
             ( { model | overlay = Nothing }, Cmd.none )
