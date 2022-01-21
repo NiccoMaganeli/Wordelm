@@ -9,10 +9,10 @@ Recently I've been trying to improve my front-end skills due to my job position.
 
 ## Run locally
 
-You must have [yarn](https://yarnpkg.com/getting-started/install) installed and then run at project root
+You must have [yarn](https://yarnpkg.com/getting-started/install) installed and then run at project root the following command
 
 ```console
 $ yarn dev
 ```
 
-it will open a server at https://localhost:8000
+It will open a server at https://localhost:8000
