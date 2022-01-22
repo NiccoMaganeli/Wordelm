@@ -57,12 +57,12 @@ gameHistoryDecoder =
         (Decode.field "attempts" (Decode.list Decode.string))
 
 
-encodeGameHistory : GameHistory -> List String -> String
-encodeGameHistory gameHistory attempts =
+encodeGameHistory : Model -> String
+encodeGameHistory { gameHistory, attempts, seed } =
     [ ( "played", Encode.int gameHistory.played )
     , ( "perAttempts", Encode.list Encode.int gameHistory.perAttempts )
     , ( "attempts", Encode.list Encode.string attempts )
-    , ( "seed", Encode.int gameHistory.seed )
+    , ( "seed", Encode.int seed )
     ]
         |> Encode.object
         |> Encode.encode 0
@@ -76,6 +76,7 @@ type alias Model =
     , toast : Toast.Tray ToastProperties
     , overlay : Maybe Overlay
     , gameHistory : GameHistory
+    , seed : Int
     }
 
 
@@ -144,6 +145,7 @@ init flags =
       , toast = Toast.tray
       , overlay = Nothing
       , gameHistory = gameHistory
+      , seed = flags.seed
       }
     , Cmd.none
     )
@@ -165,21 +167,9 @@ type Letter
     | NoState Char
 
 
-count : (Char -> Letter) -> List Letter -> Int
-count constructor letters =
-    letters
-        |> List.filter (\letter -> letter == (constructor <| letterChar letter))
-        |> List.length
-
-
-countCorrect : List Letter -> Int
-countCorrect =
-    count Correct
-
-
-countPresent : List Letter -> Int
-countPresent =
-    count Present
+count : Letter -> List Letter -> Int
+count letter =
+    List.length << List.filter ((==) letter)
 
 
 safeGet : comparable -> b -> Dict comparable b -> b
@@ -196,7 +186,7 @@ removeExtraPresent occur letters =
             (\letter ->
                 case letter of
                     Present c ->
-                        if countCorrect letters >= safeGet c 0 occur then
+                        if count (Correct c) letters >= safeGet c 0 occur then
                             Absent c
 
                         else
@@ -214,7 +204,7 @@ removePresent occur =
             (\letter acc ->
                 case letter of
                     Present c ->
-                        if countPresent acc >= safeGet c 0 occur then
+                        if count (Present c) acc >= safeGet c 0 occur then
                             Absent c :: acc
 
                         else
@@ -261,8 +251,8 @@ checkWord word chars =
 
 
 flip : (a -> b -> c) -> b -> a -> c
-flip fun a b =
-    fun b a
+flip fun b a =
+    fun a b
 
 
 tileWrapper : String -> List (Html Msg) -> Html Msg
@@ -697,7 +687,7 @@ update msg model =
                                             |> Tuple.mapFirst updateWin
                                 in
                                 ( winModel
-                                , Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel.gameHistory winModel.attempts ]
+                                , Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel ]
                                 )
 
                             Loss ->
@@ -708,7 +698,7 @@ update msg model =
                                             |> Tuple.mapFirst updateLoss
                                 in
                                 ( lossModel
-                                , Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel.gameHistory lossModel.attempts ]
+                                , Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel ]
                                 )
 
                             Guessing ->
@@ -717,7 +707,7 @@ update msg model =
                                         startNewRound ( model, Cmd.none )
                                 in
                                 ( guessingModel
-                                , Cmd.batch [ guessingCmd, saveGameHistory <| encodeGameHistory guessingModel.gameHistory guessingModel.attempts ]
+                                , Cmd.batch [ guessingCmd, saveGameHistory <| encodeGameHistory guessingModel ]
                                 )
 
                     Err str ->
