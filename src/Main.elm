@@ -4,8 +4,8 @@ import Array
 import Browser exposing (Document)
 import Browser.Events
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, h1, header, p, section, strong, text)
-import Html.Attributes exposing (class, id)
+import Html exposing (Attribute, Html, button, div, h1, header, p, section, strong, text)
+import Html.Attributes exposing (class, classList, id, style)
 import Html.Events exposing (onClick)
 import Icons
 import Json.Decode as Decode exposing (Decoder)
@@ -24,6 +24,8 @@ type alias GameHistory =
     , perAttempts : List Int
     , seed : Int
     , attempts : List String
+    , streak : Int
+    , maxStreak : Int
     }
 
 
@@ -50,11 +52,13 @@ type Overlay
 
 gameHistoryDecoder : Decoder GameHistory
 gameHistoryDecoder =
-    Decode.map4 GameHistory
+    Decode.map6 GameHistory
         (Decode.field "played" Decode.int)
         (Decode.field "perAttempts" (Decode.list Decode.int))
         (Decode.field "seed" Decode.int)
         (Decode.field "attempts" (Decode.list Decode.string))
+        (Decode.field "streak" Decode.int)
+        (Decode.field "maxStreak" Decode.int)
 
 
 encodeGameHistory : Model -> String
@@ -63,6 +67,8 @@ encodeGameHistory { gameHistory, attempts, seed } =
     , ( "perAttempts", Encode.list Encode.int gameHistory.perAttempts )
     , ( "attempts", Encode.list Encode.string attempts )
     , ( "seed", Encode.int seed )
+    , ( "streak", Encode.int gameHistory.streak )
+    , ( "maxStreak", Encode.int gameHistory.maxStreak )
     ]
         |> Encode.object
         |> Encode.encode 0
@@ -96,6 +102,8 @@ initGameHistory seed =
     , perAttempts = List.repeat maxAttempts 0
     , attempts = []
     , seed = seed
+    , streak = 0
+    , maxStreak = 0
     }
 
 
@@ -173,10 +181,8 @@ count letter =
 
 
 safeGet : comparable -> b -> Dict comparable b -> b
-safeGet val default dict =
-    dict
-        |> Dict.get val
-        |> Maybe.withDefault default
+safeGet val default =
+    Maybe.withDefault default << Dict.get val
 
 
 removeExtraPresent : Dict Char Int -> List Letter -> List Letter
@@ -482,8 +488,8 @@ renderExample letters c example =
 
 renderHelp : Html Msg
 renderHelp =
-    div [ class "help-overlay" ]
-        [ div [ class "content" ]
+    div [ class "overlay help" ]
+        [ div [ class "content-help" ]
             [ header [ class "help-header" ]
                 [ h1 [] [ text "how to play" ]
                 , button [ class "header-button", onClick CloseOverlay ] [ Icons.x ]
@@ -506,9 +512,72 @@ renderHelp =
         ]
 
 
+renderStatistics : GameHistory -> List (Html Msg)
+renderStatistics { played, perAttempts, streak, maxStreak } =
+    let
+        winRatio : Int
+        winRatio =
+            List.sum perAttempts // played
+    in
+    [ ( "Played", played )
+    , ( "Win %", winRatio )
+    , ( "Current Streak", streak )
+    , ( "Max Streak", maxStreak )
+    ]
+        |> List.map
+            (\( str, stat ) ->
+                div [ class "statistic-container" ]
+                    [ div [ class "statistic" ] [ text <| String.fromInt stat ]
+                    , div [ class "label" ] [ text str ]
+                    ]
+            )
+
+
+renderDistribution : GameHistory -> List (Html Msg)
+renderDistribution { played, perAttempts } =
+    perAttempts
+        |> List.indexedMap
+            (\i n ->
+                let
+                    width : String
+                    width =
+                        (toFloat n / toFloat played)
+                            * 100
+                            |> round
+                            |> max 7
+                            |> String.fromInt
+                            |> flip (++) "%"
+
+                    classes : Attribute Msg
+                    classes =
+                        classList [ ( "graph-bar", True ), ( "align-right", n > 0 ) ]
+                in
+                div [ class "graph-container" ]
+                    [ div [ class "guess" ] [ text <| String.fromInt (i + 1) ]
+                    , div [ class "graph" ]
+                        [ div [ classes, style "width" width ]
+                            [ div [ class "num-guesses" ] [ text <| String.fromInt n ]
+                            ]
+                        ]
+                    ]
+            )
+
+
 renderStats : Model -> Html Msg
-renderStats _ =
-    div [] []
+renderStats model =
+    div [ class "overlay stats" ]
+        [ div [ class "content-stats" ]
+            [ button [ class "header-button close-icon", onClick CloseOverlay ] [ Icons.x ]
+            , div [ class "stats-container" ]
+                [ h1 [] [ text "Statistics" ]
+                , div [ id "statistics" ]
+                    (renderStatistics model.gameHistory)
+                , h1 [] [ text "Guess Distribution" ]
+                , div [ id "distribution" ]
+                    (renderDistribution model.gameHistory)
+                ]
+            ]
+        ]
 
 
 mid : Model -> List (Html Msg)
@@ -606,19 +675,25 @@ errToast model msg =
     ( { model | toast = toast }, cmd )
 
 
-updateGameHistory : List Int -> Model -> Model
-updateGameHistory perAttempts ({ gameHistory } as model) =
+updateGameHistory : List Int -> Int -> Int -> Model -> Model
+updateGameHistory perAttempts streak maxStreak ({ gameHistory } as model) =
     { model
-        | gameHistory = { gameHistory | played = gameHistory.played + 1, perAttempts = perAttempts }
+        | gameHistory =
+            { gameHistory
+                | played = gameHistory.played + 1
+                , perAttempts = perAttempts
+                , streak = streak
+                , maxStreak = maxStreak
+            }
     }
 
 
 updateWin : Model -> Model
-updateWin model =
+updateWin ({ gameHistory } as model) =
     let
         newPerAttempts : List Int
         newPerAttempts =
-            model.gameHistory.perAttempts
+            gameHistory.perAttempts
                 |> List.indexedMap
                     (\i n ->
                         if (i + 1) == List.length model.attempts then
@@ -627,13 +702,25 @@ updateWin model =
                         else
                             n
                     )
+
+        newStreak : Int
+        newStreak =
+            gameHistory.streak + 1
+
+        newMaxStreak : Int
+        newMaxStreak =
+            if newStreak > gameHistory.maxStreak then
+                newStreak
+
+            else
+                gameHistory.maxStreak
     in
-    updateGameHistory newPerAttempts model
+    updateGameHistory newPerAttempts newStreak newMaxStreak model
 
 
 updateLoss : Model -> Model
-updateLoss model =
-    updateGameHistory model.gameHistory.perAttempts model
+updateLoss ({ gameHistory } as model) =
+    updateGameHistory gameHistory.perAttempts 0 gameHistory.maxStreak model
 
 
 update : Msg -> Model -> ( Model, Cmd Toast.Msg )

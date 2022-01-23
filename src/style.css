@@ -209,7 +209,7 @@ header .title {
     color: #34343c;
 }
 
-.help-overlay {
+.overlay {
     display: flex;
     position: absolute;
     width: 100%;
@@ -218,8 +218,16 @@ header .title {
     left:0;
     justify-content: center;
     z-index: 9001;
-    background-color: #121213;
     animation: SlideIn 150ms linear;
+}
+
+.overlay.help {
+    background-color: #121213;
+}
+
+.overlay.stats {
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
 }
 
 @keyframes SlideIn {
@@ -233,7 +241,7 @@ header .title {
     }
 }
 
-.content {
+.content-help {
     position: relative;
     color: #d7dadc;
     padding: 0 32px;
@@ -245,6 +253,21 @@ header .title {
     flex-direction: column;
 }
 
+.content-stats {
+    position: relative;
+    border-radius: 8px;
+    border: 1px solid #1a1a1b;
+    background-color: #121213;
+    color: #d7dadc;
+    box-shadow: 0 4px 23px 0 rgb(0 0 0 / 20%);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90%;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
 header.help-header {
     border: none;
     justify-content: center;
@@ -252,7 +275,7 @@ header.help-header {
 
 header.help-header > .header-button {
     position: absolute;
-    right: 0;
+    right: 25px;
     user-select: none;
 }
 
@@ -289,4 +312,90 @@ p {
 .example {
     margin-top: 24px;
     margin-bottom: 24px;
+}
+
+.close-icon {
+    width: 24px;
+    height: 24px;
+    position: absolute;
+    top: 16px;
+    right: 16px;
+}
+
+.stats-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+}
+
+#statistics, #distribution {
+    padding-bottom: 10px;
+}
+
+#statistics {
+    display: flex;
+}
+
+#distribution {
+    width: 80%;
+}
+
+.statistic-container {
+    flex: 1;
+}
+
+.statistic-container .statistic {
+    font-size: 36px;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    letter-spacing: 0.05rem;
+    font-variant-numeric: proportional-nums;
+}
+
+.statistic-container .label {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.graph-container {
+    width: 100%;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    padding-bottom: 4px;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.graph-container .graph {
+    width: 100%;
+    height: 100%;
+    padding-left: 4px;
+}
+
+.graph-container .graph .graph-bar {
+    height: 100%;
+    width: 0%;
+    position: relative;
+    background-color: #3a3a3c;
+    display: flex;
+    justify-content: center;
+}
+
+.graph-container .graph .num-guesses {
+    font-weight: bold;
+    color: #d7dadc;
+}
+
+.graph-container .graph .graph-bar.align-right {
+    justify-content: flex-end;
+    padding-right: 8px;
 }
