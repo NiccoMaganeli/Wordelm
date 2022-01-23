@@ -263,7 +263,14 @@ flip fun b a =
 
 tileWrapper : String -> List (Html Msg) -> Html Msg
 tileWrapper state =
-    div [ class <| String.join " " [ "tile", state ] ]
+    let
+        animate : Bool
+        animate =
+            [ "empty", "no-state" ]
+                |> List.member state
+                |> not
+    in
+    div [ classList [ ( "tile", True ), ( "animate", animate ), ( state, True ) ] ]
 
 
 charText : Char -> List (Html Msg)
@@ -517,7 +524,7 @@ renderStatistics { played, perAttempts, streak, maxStreak } =
     let
         winRatio : Int
         winRatio =
-            List.sum perAttempts // played
+            round <| (toFloat <| List.sum perAttempts) / toFloat played * 100
     in
     [ ( "Played", played )
     , ( "Win %", winRatio )
@@ -535,7 +542,12 @@ renderStatistics { played, perAttempts, streak, maxStreak } =
 
 renderDistribution : GameHistory -> List (Html Msg)
 renderDistribution { played, perAttempts } =
-    perAttempts
+    let
+        gamesLost : Int
+        gamesLost =
+            played - List.sum perAttempts
+    in
+    (perAttempts ++ [ gamesLost ])
         |> List.indexedMap
             (\i n ->
                 let
@@ -551,9 +563,17 @@ renderDistribution { played, perAttempts } =
                     classes : Attribute Msg
                     classes =
                         classList [ ( "graph-bar", True ), ( "align-right", n > 0 ) ]
+
+                    guess : String
+                    guess =
+                        if i + 1 == 7 then
+                            "X"
+
+                        else
+                            String.fromInt (i + 1)
                 in
                 div [ class "graph-container" ]
-                    [ div [ class "guess" ] [ text <| String.fromInt (i + 1) ]
+                    [ div [ class "guess" ] [ text guess ]
                     , div [ class "graph" ]
                         [ div [ classes, style "width" width ]
                             [ div [ class "num-guesses" ] [ text <| String.fromInt n ]

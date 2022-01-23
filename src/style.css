@@ -97,6 +97,52 @@ header .title {
     background-color: #b59f3b; 
 }
 
+.keyboard-button.absent, .keyboard-button.correct, .keyboard-button.present {
+    animation: PopIn 250ms ease-in;
+}
+
+.tile.animate:nth-child(1) {
+    animation: Invisible 750ms ease-in, FlipIn 500ms ease-in;
+}
+.tile.animate:nth-child(2) {
+    animation: Invisible 1s ease-in, FlipIn 500ms ease-in 250ms;
+}
+.tile.animate:nth-child(3) {
+    animation: Invisible 1.5s ease-in, FlipIn 500ms ease-in 500ms;
+}
+.tile.animate:nth-child(4) {
+    animation: Invisible 1.75s ease-in, FlipIn 500ms ease-in 750ms;
+}
+.tile.animate:nth-child(5) {
+    animation: Invisible 2s ease-in, FlipIn 500ms ease-in 1s;
+}
+.tile.animate:nth-child(6) {
+    animation: Invisible 2.25s ease-in, FlipIn 500ms ease-in 1.25s;
+}
+
+@keyframes Invisible {
+    from {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes PopIn {
+    from {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+
+    40% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+    
+}
+
 .tile.no-state {
     background-color: #121213;
     border: 2px solid #565758;
@@ -111,6 +157,26 @@ header .title {
 .example > .row-board > .tile {
     width: 40px;
     height: 40px;
+}
+
+.example .tile.correct, 
+.example .tile.absent, 
+.example .tile.present {
+    animation: FlipIn 500ms ease-in;
+}
+
+@keyframes FlipIn {
+    0% {
+        transform: rotateX(0deg);
+    }
+
+    50% {
+        transform: rotateX(-90deg);
+    }
+
+    100% {
+        transform: rotateX(0deg);
+    }
 }
 
 #keyboard {
