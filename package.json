@@ -8,14 +8,16 @@
   "scripts": {
     "clean": "rm -rf dist/",
     "dev": "yarn clean && parcel index.html --port 8000",
-    "build": "yarn clean && parcel build index.html",
-    "prepare": "yarn husky install"
+    "build": "yarn clean && parcel build index.html --no-cache --public-url ./",
+    "prepare": "yarn husky install",
+    "deploy": "yarn build && yarn gh-pages -d dist/"
   },
   "devDependencies": {
     "@parcel/transformer-elm": "^2.1.1",
     "elm": "^0.19.1-5",
     "elm-format": "^0.8.5",
     "elm-review": "^2.7.0",
+    "gh-pages": "^3.2.3",
     "husky": "^7.0.4",
     "parcel": "^2.1.1"
   }
