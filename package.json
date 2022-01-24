@@ -9,7 +9,7 @@
     "clean": "rm -rf dist/",
     "dev": "yarn clean && parcel index.html --port 8000",
     "build": "yarn clean && parcel build index.html --no-cache --public-url ./",
-    "prepare": "yarn husky install",
+    "postinstall": "yarn husky install",
     "deploy": "yarn build && yarn gh-pages -d dist/"
   },
   "devDependencies": {
