@@ -8,12 +8,15 @@
   "scripts": {
     "clean": "rm -rf dist/",
     "dev": "yarn clean && parcel index.html --port 8000",
-    "build": "yarn clean && parcel build index.html"
+    "build": "yarn clean && parcel build index.html",
+    "prepare": "yarn husky install"
   },
   "devDependencies": {
     "@parcel/transformer-elm": "^2.1.1",
     "elm": "^0.19.1-5",
     "elm-format": "^0.8.5",
+    "elm-review": "^2.7.0",
+    "husky": "^7.0.4",
     "parcel": "^2.1.1"
   }
 }

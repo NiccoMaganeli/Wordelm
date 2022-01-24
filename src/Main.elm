@@ -12,11 +12,16 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Random
 import Set exposing (Set)
+import Task
+import Time
 import Toast
 import Words as W
 
 
 port saveGameHistory : String -> Cmd msg
+
+
+port copyToClipboard : String -> Cmd msg
 
 
 type alias GameHistory =
@@ -39,10 +44,6 @@ type GameState
     = Guessing
     | Won
     | Loss
-
-
-type alias ToastProperties =
-    { msg : String, err : Bool }
 
 
 type Overlay
@@ -79,10 +80,12 @@ type alias Model =
     , attempts : List String
     , word : String
     , state : GameState
-    , toast : Toast.Tray ToastProperties
+    , toast : Toast.Tray String
     , overlay : Maybe Overlay
     , gameHistory : GameHistory
     , seed : Int
+    , time : Time.Posix
+    , zone : Time.Zone
     }
 
 
@@ -96,12 +99,12 @@ maxAttempts =
     6
 
 
-initGameHistory : Int -> GameHistory
-initGameHistory seed =
+initGameHistory : GameHistory
+initGameHistory =
     { played = 0
     , perAttempts = List.repeat maxAttempts 0
     , attempts = []
-    , seed = seed
+    , seed = 0
     , streak = 0
     , maxStreak = 0
     }
@@ -125,7 +128,7 @@ init flags =
         gameHistory =
             flags.gameHistory
                 |> Maybe.andThen (Result.toMaybe << Decode.decodeString gameHistoryDecoder)
-                |> Maybe.withDefault (initGameHistory flags.seed)
+                |> Maybe.withDefault initGameHistory
 
         attempts : List String
         attempts =
@@ -145,17 +148,28 @@ init flags =
 
             else
                 Guessing
+
+        overlay : Maybe Overlay
+        overlay =
+            case state of
+                Guessing ->
+                    Nothing
+
+                _ ->
+                    Just Stats
     in
     ( { usrInp = ""
       , attempts = attempts
       , word = randomWord
       , state = state
       , toast = Toast.tray
-      , overlay = Nothing
+      , overlay = overlay
       , gameHistory = gameHistory
       , seed = flags.seed
+      , time = Time.millisToPosix 0
+      , zone = Time.utc
       }
-    , Cmd.none
+    , Task.perform AdjustTimeZone Time.here
     )
 
 
@@ -163,7 +177,7 @@ top : Html Msg
 top =
     header []
         [ div [] [ button [ class "header-button", onClick <| OpenOverlay Help ] [ Icons.helpCircle ] ]
-        , div [ class "title" ] [ text "Wordle" ]
+        , div [ class "title" ] [ text "Wordelm" ]
         , div [] [ button [ class "header-button", onClick <| OpenOverlay Stats ] [ Icons.barChart2 ] ]
         ]
 
@@ -450,18 +464,9 @@ toastConfig =
 renderToastContainer : Model -> Html Msg
 renderToastContainer model =
     let
-        renderToast : List (Html.Attribute Msg) -> Toast.Info ToastProperties -> Html Msg
+        renderToast : List (Html.Attribute Msg) -> Toast.Info String -> Html Msg
         renderToast _ toast =
-            div
-                [ class
-                    (if toast.content.err then
-                        "err-toast"
-
-                     else
-                        "toast"
-                    )
-                ]
-                [ text toast.content.msg ]
+            div [ class "toast" ] [ text toast.content ]
     in
     div [ class "toast-container" ] [ Toast.render renderToast model.toast toastConfig ]
 
@@ -503,7 +508,7 @@ renderHelp =
                 ]
             , section []
                 [ div [ class "instructions" ]
-                    [ p [] [ text "Guess the ", strong [] [ text "WORDLE" ], text " in 6 tries." ]
+                    [ p [] [ text "Guess the ", strong [] [ text "WORDELM" ], text " in 6 tries." ]
                     , p [] [ text "Each guess must be a valid 5 letter word. Hit the enter button to submit." ]
                     , p [] [ text "After each guess, the color of the tiles will change to show how close your guess was to the word." ]
                     , div [ class "examples" ]
@@ -512,7 +517,7 @@ renderHelp =
                         , renderExample (NoState 'p' :: Present 'i' :: (List.map NoState <| String.toList "lls")) 'I' PresentEx
                         , renderExample ((List.map NoState <| String.toList "vag") ++ [ Absent 'u', NoState 'e' ]) 'U' AbsentEx
                         ]
-                    , p [] [ strong [] [ text "A new WORDLE will be available each day!" ] ]
+                    , p [] [ strong [] [ text "A new WORDELM will be available each day!" ] ]
                     ]
                 ]
             ]
@@ -524,7 +529,11 @@ renderStatistics { played, perAttempts, streak, maxStreak } =
     let
         winRatio : Int
         winRatio =
-            round <| (toFloat <| List.sum perAttempts) / toFloat played * 100
+            if played == 0 then
+                0
+
+            else
+                round <| (toFloat <| List.sum perAttempts) / toFloat played * 100
     in
     [ ( "Played", played )
     , ( "Win %", winRatio )
@@ -540,34 +549,48 @@ renderStatistics { played, perAttempts, streak, maxStreak } =
             )
 
 
-renderDistribution : GameHistory -> List (Html Msg)
-renderDistribution { played, perAttempts } =
+renderDistribution : Model -> List (Html Msg)
+renderDistribution { gameHistory, attempts, state } =
     let
         gamesLost : Int
         gamesLost =
-            played - List.sum perAttempts
+            gameHistory.played - List.sum gameHistory.perAttempts
     in
-    (perAttempts ++ [ gamesLost ])
+    gameHistory.perAttempts
+        ++ [ gamesLost ]
         |> List.indexedMap
             (\i n ->
                 let
                     width : String
                     width =
-                        (toFloat n / toFloat played)
+                        (toFloat n / toFloat gameHistory.played)
                             * 100
                             |> round
                             |> max 7
                             |> String.fromInt
                             |> flip (++) "%"
 
+                    highlight : Bool
+                    highlight =
+                        case state of
+                            Loss ->
+                                i + 1 == 7
+
+                            _ ->
+                                i + 1 == List.length attempts
+
                     classes : Attribute Msg
                     classes =
-                        classList [ ( "graph-bar", True ), ( "align-right", n > 0 ) ]
+                        classList
+                            [ ( "graph-bar", True )
+                            , ( "align-right", n > 0 )
+                            , ( "highlight", highlight )
+                            ]
 
                     guess : String
                     guess =
                         if i + 1 == 7 then
-                            "X"
+                            "x"
 
                         else
                             String.fromInt (i + 1)
@@ -583,19 +606,64 @@ renderDistribution { played, perAttempts } =
             )
 
 
+renderTimer : Time.Posix -> Time.Zone -> Html Msg
+renderTimer time zone =
+    let
+        hours : Int
+        hours =
+            23 - Time.toHour zone time
+
+        minutes : Int
+        minutes =
+            59 - Time.toMinute zone time
+
+        seconds : Int
+        seconds =
+            59 - Time.toSecond zone time
+
+        timerText : String
+        timerText =
+            [ hours, minutes, seconds ]
+                |> List.map (String.padLeft 2 '0' << String.fromInt)
+                |> String.join ":"
+    in
+    div [ id "timer" ]
+        [ div [ class "statistic-container" ]
+            [ div [ class "statistic timer" ] [ text timerText ] ]
+        ]
+
+
+renderFooter : Model -> Html Msg
+renderFooter { time, zone } =
+    div [ class "footer" ]
+        [ div [ class "countdown" ] [ h1 [] [ text "Next Wordelm" ], renderTimer time zone ]
+        , div [ class "share" ] [ button [ id "share-button", onClick ToClipboard ] [ text "Share", Icons.share2 ] ]
+        ]
+
+
 renderStats : Model -> Html Msg
-renderStats model =
+renderStats ({ gameHistory, state } as model) =
+    let
+        footer : List (Html Msg)
+        footer =
+            case state of
+                Guessing ->
+                    []
+
+                _ ->
+                    [ renderFooter model ]
+    in
     div [ class "overlay stats" ]
         [ div [ class "content-stats" ]
             [ button [ class "header-button close-icon", onClick CloseOverlay ] [ Icons.x ]
             , div [ class "stats-container" ]
-                [ h1 [] [ text "Statistics" ]
-                , div [ id "statistics" ]
-                    (renderStatistics model.gameHistory)
-                , h1 [] [ text "Guess Distribution" ]
-                , div [ id "distribution" ]
-                    (renderDistribution model.gameHistory)
-                ]
+                ([ h1 [] [ text "Statistics" ]
+                 , div [ id "statistics" ] <| renderStatistics gameHistory
+                 , h1 [] [ text "Guess Distribution" ]
+                 , div [ id "distribution" ] <| renderDistribution model
+                 ]
+                    ++ footer
+                )
             ]
         ]
 
@@ -637,6 +705,9 @@ type Msg
     | ToastMsg Toast.Msg
     | OpenOverlay Overlay
     | CloseOverlay
+    | AdjustTimeZone Time.Zone
+    | Tick Time.Posix
+    | ToClipboard
 
 
 isGuessing : GameState -> Bool
@@ -667,32 +738,23 @@ validateInput word attempts inp =
         Ok Guessing
 
 
-persistentToast : String -> GameState -> Model -> ( Model, Cmd Toast.Msg )
-persistentToast msg gmSt model =
+genToast : String -> Model -> ( Model, Cmd Toast.Msg )
+genToast msg model =
     let
         ( toast, cmd ) =
-            Toast.add model.toast (Toast.persistent { msg = msg, err = False })
+            Toast.add model.toast (Toast.expireIn 2000 msg)
     in
-    ( { model | toast = toast, state = gmSt }, cmd )
+    ( { model | toast = toast }, cmd )
 
 
 winToast : Model -> ( Model, Cmd Toast.Msg )
-winToast =
-    persistentToast "Congratulations!" Won
+winToast model =
+    genToast "Congratulations!" { model | state = Won }
 
 
 lossToast : Model -> ( Model, Cmd Toast.Msg )
 lossToast model =
-    persistentToast (String.join " " [ "Word was", model.word ++ "." ]) Loss model
-
-
-errToast : Model -> String -> ( Model, Cmd Toast.Msg )
-errToast model msg =
-    let
-        ( toast, cmd ) =
-            Toast.add model.toast (Toast.expireIn 2000 { msg = msg, err = True })
-    in
-    ( { model | toast = toast }, cmd )
+    genToast (String.join " " [ "Word was", model.word ++ "." ]) { model | state = Loss }
 
 
 updateGameHistory : List Int -> Int -> Int -> Model -> Model
@@ -743,27 +805,62 @@ updateLoss ({ gameHistory } as model) =
     updateGameHistory gameHistory.perAttempts 0 gameHistory.maxStreak model
 
 
-update : Msg -> Model -> ( Model, Cmd Toast.Msg )
+generateClipboard : Model -> String
+generateClipboard { attempts, state, word } =
+    let
+        attemptsNumber : String
+        attemptsNumber =
+            if state == Loss then
+                "X"
+
+            else
+                String.fromInt <| List.length attempts
+
+        whichSquare : Letter -> String
+        whichSquare letter =
+            case letter of
+                Absent _ ->
+                    "⬛"
+
+                Present _ ->
+                    "🟨"
+
+                Correct _ ->
+                    "🟩"
+
+                NoState _ ->
+                    ""
+
+        attemptsText : String
+        attemptsText =
+            attempts
+                |> List.map (String.join "" << List.map whichSquare << checkWord word << String.toList)
+                |> String.join "\n"
+    in
+    "Wordelm " ++ attemptsNumber ++ "/6\n\n" ++ attemptsText
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         OnClick c ->
-            let
-                allValidChar : Set Char
-                allValidChar =
-                    "qwertyuiopasdfghjklzxcvbnm"
-                        |> String.toList
-                        |> Set.fromList
-
-                validChar : Char -> Bool
-                validChar =
-                    flip Set.member allValidChar
-            in
             ( { model
                 | usrInp =
                     if not <| isGuessing model.state then
                         model.usrInp
 
                     else
+                        let
+                            allValidChar : Set Char
+                            allValidChar =
+                                "qwertyuiopasdfghjklzxcvbnm"
+                                    |> String.toList
+                                    |> Set.fromList
+
+                            validChar : Char -> Bool
+                            validChar =
+                                flip Set.member allValidChar
+                        in
                         model.usrInp
                             ++ String.fromChar c
                             |> String.filter validChar
@@ -774,15 +871,16 @@ update msg model =
 
         Submit ->
             let
-                result : Result String GameState
-                result =
-                    validateInput model.word model.attempts model.usrInp
-
                 startNewRound : ( Model, Cmd Toast.Msg ) -> ( Model, Cmd Toast.Msg )
                 startNewRound ( mdl, cmd ) =
                     ( { mdl | attempts = mdl.attempts ++ [ mdl.usrInp ], usrInp = "" }, cmd )
             in
             if isGuessing model.state then
+                let
+                    result : Result String GameState
+                    result =
+                        validateInput model.word model.attempts model.usrInp
+                in
                 case result of
                     Ok gmSt ->
                         case gmSt of
@@ -794,7 +892,7 @@ update msg model =
                                             |> Tuple.mapFirst updateWin
                                 in
                                 ( winModel
-                                , Cmd.batch [ winCmd, saveGameHistory <| encodeGameHistory winModel ]
+                                , Cmd.batch [ Cmd.map ToastMsg winCmd, saveGameHistory <| encodeGameHistory winModel ]
                                 )
 
                             Loss ->
@@ -805,7 +903,7 @@ update msg model =
                                             |> Tuple.mapFirst updateLoss
                                 in
                                 ( lossModel
-                                , Cmd.batch [ lossCmd, saveGameHistory <| encodeGameHistory lossModel ]
+                                , Cmd.batch [ Cmd.map ToastMsg lossCmd, saveGameHistory <| encodeGameHistory lossModel ]
                                 )
 
                             Guessing ->
@@ -814,11 +912,12 @@ update msg model =
                                         startNewRound ( model, Cmd.none )
                                 in
                                 ( guessingModel
-                                , Cmd.batch [ guessingCmd, saveGameHistory <| encodeGameHistory guessingModel ]
+                                , Cmd.batch [ Cmd.map ToastMsg guessingCmd, saveGameHistory <| encodeGameHistory guessingModel ]
                                 )
 
                     Err str ->
-                        errToast model str
+                        genToast str model
+                            |> Tuple.mapSecond (Cmd.map ToastMsg)
 
             else
                 ( model, Cmd.none )
@@ -831,13 +930,33 @@ update msg model =
                 ( toast, cmd ) =
                     Toast.update tmsg model.toast
             in
-            ( { model | toast = toast }, cmd )
+            ( { model | toast = toast }, Cmd.map ToastMsg cmd )
 
         OpenOverlay overlay ->
-            ( { model | overlay = Just overlay }, Cmd.none )
+            ( { model | overlay = Just overlay }
+            , case overlay of
+                Help ->
+                    Cmd.none
+
+                Stats ->
+                    Task.perform Tick Time.now
+            )
 
         CloseOverlay ->
             ( { model | overlay = Nothing }, Cmd.none )
+
+        AdjustTimeZone zone ->
+            ( { model | zone = zone }, Cmd.none )
+
+        Tick time ->
+            ( { model | time = time }, Cmd.none )
+
+        ToClipboard ->
+            let
+                ( clipModel, clipCmd ) =
+                    genToast "Copied to clipboard" model
+            in
+            ( clipModel, Cmd.batch [ copyToClipboard <| generateClipboard model, Cmd.map ToastMsg clipCmd ] )
 
 
 keyDecoder : Decoder Msg
@@ -870,7 +989,10 @@ subscriptions model =
         Nothing ->
             Browser.Events.onKeyDown keyDecoder
 
-        Just _ ->
+        Just Stats ->
+            Time.every 1000 Tick
+
+        _ ->
             Sub.none
 
 
@@ -879,6 +1001,6 @@ main =
     Browser.document
         { init = init
         , view = view
-        , update = \msg model -> Tuple.mapSecond (Cmd.map ToastMsg) (update msg model)
+        , update = update
         , subscriptions = subscriptions
         }

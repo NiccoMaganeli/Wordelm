@@ -16,3 +16,7 @@ const app = Elm.Main.init({
 app.ports.saveGameHistory.subscribe(string => {
     localStorage.setItem(key, string);
 });
+
+app.ports.copyToClipboard.subscribe(string => {
+    navigator.clipboard.writeText(string)
+});
