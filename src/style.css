@@ -527,7 +527,5 @@ button#share-button {
 }
 
 button#share-button svg {
-    width: 24px;
-    height: 24px;
     padding-left: 8px;
 }
