@@ -282,7 +282,7 @@ header .title {
     left: 0;
     justify-content: center;
     z-index: 9000;
-    animation: SlideIn 150ms linear;
+    animation: SlideIn 200ms linear;
     align-items: center;
 }
 
@@ -396,8 +396,6 @@ p {
 }
 
 .close-icon {
-    width: 24px;
-    height: 24px;
     position: absolute;
     top: 16px;
     right: 16px;
