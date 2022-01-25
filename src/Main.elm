@@ -475,14 +475,14 @@ renderKeyboard model =
         half =
             div [ class "half" ] []
 
-        txtBtn : Msg -> String -> Html Msg
-        txtBtn msg txt =
-            button [ class "one-and-a-half keyboard-button", onClick msg ] [ text txt ]
+        txtBtn : Msg -> List (Html Msg) -> Html Msg
+        txtBtn msg =
+            button [ class "one-and-a-half keyboard-button", onClick msg ]
     in
     div [ id "keyboard" ]
         [ rowBtn <| renderRow "qwertyuiop"
         , rowBtn <| half :: renderRow "asdfghjkl" ++ [ half ]
-        , rowBtn <| txtBtn Submit "⏎" :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace "⌫" ]
+        , rowBtn <| txtBtn Submit [ text "enter" ] :: renderRow "zxcvbnm" ++ [ txtBtn BckSpace [ Icons.delete ] ]
         ]
 
 

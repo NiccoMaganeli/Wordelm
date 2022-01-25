@@ -1,5 +1,6 @@
 module Icons exposing
     ( barChart2
+    , delete
     , helpCircle
     , share2
     , x
@@ -59,4 +60,13 @@ share2 =
         , Svg.circle [ cx "18", cy "19", r "3" ] []
         , Svg.line [ x1 "8.59", y1 "13.51", x2 "15.42", y2 "17.49" ] []
         , Svg.line [ x1 "15.41", y1 "6.51", x2 "8.59", y2 "10.49" ] []
+        ]
+
+
+delete : Html msg
+delete =
+    svgFeatherIcon "delete"
+        [ Svg.path [ d "M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" ] []
+        , Svg.line [ x1 "18", y1 "9", x2 "12", y2 "15" ] []
+        , Svg.line [ x1 "12", y1 "9", x2 "18", y2 "15" ] []
         ]
