@@ -526,6 +526,12 @@ button#share-button {
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0.3);
 }
 
-button#share-button svg {
+button#share-button:hover {
+    opacity: 0.9;
+}
+
+button#share-button .share-icon {
     padding-left: 8px;
+    height: 24px;
+    width: 24px;
 }

@@ -667,7 +667,12 @@ renderFooter : Model -> Html Msg
 renderFooter { time, zone } =
     div [ class "footer" ]
         [ div [ class "countdown" ] [ h1 [] [ text "Next Wordelm" ], renderTimer time zone ]
-        , div [ class "share" ] [ button [ id "share-button", onClick ToClipboard ] [ text "Share", Icons.share2 ] ]
+        , div [ class "share" ]
+            [ button [ id "share-button", onClick ToClipboard ]
+                [ text "Share"
+                , div [ class "share-icon" ] [ Icons.share2 ]
+                ]
+            ]
         ]
 
 
