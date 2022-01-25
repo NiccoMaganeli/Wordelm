@@ -2,6 +2,7 @@ port module Main exposing (main)
 
 import Array
 import Browser exposing (Document)
+import Browser.Dom exposing (Error, Viewport, getViewportOf)
 import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, button, div, h1, header, p, section, strong, text)
@@ -86,6 +87,7 @@ type alias Model =
     , seed : Int
     , time : Time.Posix
     , zone : Time.Zone
+    , containerHeight : Maybe Float
     }
 
 
@@ -108,6 +110,11 @@ initGameHistory =
     , streak = 0
     , maxStreak = 0
     }
+
+
+getBoardContainerHeight : Cmd Msg
+getBoardContainerHeight =
+    Task.attempt AdjustContainerHeight (getViewportOf "board-container")
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -168,8 +175,9 @@ init flags =
       , seed = flags.seed
       , time = Time.millisToPosix 0
       , zone = Time.utc
+      , containerHeight = Nothing
       }
-    , Task.perform AdjustTimeZone Time.here
+    , Cmd.batch [ Task.perform AdjustTimeZone Time.here, getBoardContainerHeight ]
     )
 
 
@@ -313,16 +321,16 @@ renderWord chars =
 
 
 renderInputs : Model -> Html Msg
-renderInputs model =
+renderInputs { attempts, usrInp, word, containerHeight } =
     let
         renderUserInput : Html Msg
         renderUserInput =
             div [ class "row-board" ]
-                (if List.length model.attempts < maxAttempts then
-                    model.usrInp
+                (if List.length attempts < maxAttempts then
+                    usrInp
                         |> String.toList
                         |> List.map charText
-                        |> flip List.append (List.repeat (maxLetters - String.length model.usrInp) [])
+                        |> flip List.append (List.repeat (maxLetters - String.length usrInp) [])
                         |> List.map (tileWrapper "empty")
 
                  else
@@ -331,14 +339,36 @@ renderInputs model =
 
         renderEmptyWords : List (Html Msg)
         renderEmptyWords =
-            List.repeat (maxAttempts - 1 - List.length model.attempts)
+            List.repeat (maxAttempts - 1 - List.length attempts)
                 (div [ class "row-board" ]
                     (List.repeat maxLetters (tileWrapper "empty" []))
                 )
+
+        width : Int
+        width =
+            case containerHeight of
+                Nothing ->
+                    350
+
+                Just h ->
+                    min 350 (round <| h * (5 / 6))
+
+        height : Int
+        height =
+            6 * floor (toFloat width / 5)
+
+        toPx : Int -> String
+        toPx =
+            flip (++) "px" << String.fromInt
+
+        styleList : List (Attribute Msg)
+        styleList =
+            [ ( "width", width ), ( "height", height ) ]
+                |> List.map ((\( t, v ) -> style t v) << Tuple.mapSecond toPx)
     in
-    div [ class "board" ]
-        ((model.attempts
-            |> List.map (renderWord << checkWord model.word << String.toList)
+    div (class "board" :: styleList)
+        ((attempts
+            |> List.map (renderWord << checkWord word << String.toList)
             |> List.map (div [ class "row-board" ])
          )
             ++ (renderUserInput :: renderEmptyWords)
@@ -708,6 +738,8 @@ type Msg
     | AdjustTimeZone Time.Zone
     | Tick Time.Posix
     | ToClipboard
+    | AdjustContainerHeight (Result Error Viewport)
+    | Resize
 
 
 isGuessing : GameState -> Bool
@@ -958,6 +990,17 @@ update msg model =
             in
             ( clipModel, Cmd.batch [ copyToClipboard <| generateClipboard model, Cmd.map ToastMsg clipCmd ] )
 
+        AdjustContainerHeight result ->
+            case result of
+                Err _ ->
+                    ( model, Cmd.none )
+
+                Ok { viewport } ->
+                    ( { model | containerHeight = Just viewport.height }, Cmd.none )
+
+        Resize ->
+            ( model, getBoardContainerHeight )
+
 
 keyDecoder : Decoder Msg
 keyDecoder =
@@ -984,16 +1027,25 @@ keyDecoder =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    case model.overlay of
-        Nothing ->
-            Browser.Events.onKeyDown keyDecoder
+subscriptions { overlay } =
+    let
+        overlaySub : Sub Msg
+        overlaySub =
+            case overlay of
+                Nothing ->
+                    Browser.Events.onKeyDown keyDecoder
 
-        Just Stats ->
-            Time.every 1000 Tick
+                Just Stats ->
+                    Time.every 1000 Tick
 
-        _ ->
-            Sub.none
+                _ ->
+                    Sub.none
+
+        resizeSub : Sub Msg
+        resizeSub =
+            Browser.Events.onResize (\_ _ -> Resize)
+    in
+    Sub.batch [ overlaySub, resizeSub ]
 
 
 main : Program Flags Model Msg
