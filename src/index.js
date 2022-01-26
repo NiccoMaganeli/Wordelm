@@ -1,9 +1,9 @@
 import { Elm } from "./Main.elm";
 
 const now = new Date();
-const year = now.getUTCFullYear();
-const month = now.getUTCMonth();
-const day = now.getUTCDate();
+const year = now.getFullYear();
+const month = now.getMonth();
+const day = now.getDate();
 
 const seed = +new Date(year, month, day);
 const key = "wordelm";

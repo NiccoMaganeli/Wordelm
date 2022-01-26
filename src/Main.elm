@@ -606,8 +606,11 @@ renderDistribution { gameHistory, attempts, state } =
                             Loss ->
                                 i + 1 == 7
 
-                            _ ->
+                            Won ->
                                 i + 1 == List.length attempts
+
+                            Guessing ->
+                                False
 
                     classes : Attribute Msg
                     classes =
