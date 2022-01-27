@@ -1,6 +1,5 @@
 port module Main exposing (main)
 
-import Array
 import Browser exposing (Document)
 import Browser.Dom exposing (Error, Viewport, getViewportOf)
 import Browser.Events
@@ -120,16 +119,21 @@ getBoardContainerHeight =
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
-        randomInt : Random.Generator Int
-        randomInt =
-            Random.int 0 (List.length W.words - 1)
+        wordGenerator : Random.Generator String
+        wordGenerator =
+            case W.words of
+                first :: rest ->
+                    Random.uniform first rest
+
+                [] ->
+                    Random.constant "aeiou"
 
         randomWord : String
         randomWord =
-            Random.step randomInt (Random.initialSeed flags.seed)
+            flags.seed
+                |> Random.initialSeed
+                |> Random.step wordGenerator
                 |> Tuple.first
-                |> flip Array.get (Array.fromList W.words)
-                |> Maybe.withDefault "aeiou"
 
         gameHistory : GameHistory
         gameHistory =
