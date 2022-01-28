@@ -121,7 +121,7 @@ init flags =
     let
         wordGenerator : Random.Generator String
         wordGenerator =
-            case W.words of
+            case W.dailyWords of
                 first :: rest ->
                     Random.uniform first rest
 
@@ -400,14 +400,19 @@ letterChar letter =
             c
 
 
-isCorrect : Letter -> Bool
-isCorrect letter =
-    case letter of
-        Correct _ ->
-            True
+is : (Char -> Letter) -> Letter -> Bool
+is constructor letter =
+    (constructor <| letterChar letter) == letter
 
-        _ ->
-            False
+
+isCorrect : Letter -> Bool
+isCorrect =
+    is Correct
+
+
+isAbsent : Letter -> Bool
+isAbsent =
+    is Absent
 
 
 renderKeyboard : Model -> Html Msg
@@ -429,7 +434,7 @@ renderKeyboard model =
                                 Dict.insert chr letter d
 
                             Just oldLetter ->
-                                if isCorrect oldLetter then
+                                if isAbsent letter || isCorrect oldLetter then
                                     d
 
                                 else
@@ -769,7 +774,7 @@ validateInput word attempts inp =
     if String.length inp < maxLetters then
         Err "Not enough letters"
 
-    else if not <| List.member inp W.words then
+    else if not <| List.member inp W.validWords then
         Err "Not a valid word"
 
     else if word == inp then
