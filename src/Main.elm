@@ -889,87 +889,105 @@ generateClipboard { attempts, state, word } =
     "Wordelm " ++ attemptsNumber ++ "/6\n\n" ++ attemptsText
 
 
+handleOnClick : Char -> Model -> ( Model, Cmd Msg )
+handleOnClick c model =
+    ( { model
+        | usrInp =
+            if not <| isGuessing model.state then
+                model.usrInp
+
+            else
+                let
+                    allValidChar : Set Char
+                    allValidChar =
+                        "qwertyuiopasdfghjklzxcvbnm"
+                            |> String.toList
+                            |> Set.fromList
+
+                    validChar : Char -> Bool
+                    validChar =
+                        flip Set.member allValidChar
+                in
+                model.usrInp
+                    ++ String.fromChar c
+                    |> String.filter validChar
+                    |> String.slice 0 maxLetters
+      }
+    , Cmd.none
+    )
+
+
+startNewRound : ( Model, Cmd Toast.Msg ) -> ( Model, Cmd Toast.Msg )
+startNewRound ( mdl, cmd ) =
+    ( { mdl | attempts = mdl.attempts ++ [ mdl.usrInp ], usrInp = "" }, cmd )
+
+
+handleGameStateChange : (Model -> ( Model, Cmd Toast.Msg )) -> (Model -> Model) -> Model -> ( Model, Cmd Msg )
+handleGameStateChange toastGenerator modelUpdater model =
+    let
+        ( newModel, newCmd ) =
+            model
+                |> toastGenerator
+                |> startNewRound
+                |> Tuple.mapFirst modelUpdater
+    in
+    ( newModel
+    , Cmd.batch [ Cmd.map ToastMsg newCmd, saveGameHistory <| encodeGameHistory newModel ]
+    )
+
+
+handleWon : Model -> ( Model, Cmd Msg )
+handleWon =
+    handleGameStateChange winToast updateWin
+
+
+handleLoss : Model -> ( Model, Cmd Msg )
+handleLoss =
+    handleGameStateChange lossToast updateLoss
+
+
+handleSubmit : Model -> ( Model, Cmd Msg )
+handleSubmit model =
+    if isGuessing model.state then
+        let
+            result : Result String GameState
+            result =
+                validateInput model.word model.attempts model.usrInp
+        in
+        case result of
+            Ok gmSt ->
+                case gmSt of
+                    Won ->
+                        handleWon model
+
+                    Loss ->
+                        handleLoss model
+
+                    Guessing ->
+                        let
+                            ( guessingModel, guessingCmd ) =
+                                startNewRound ( model, Cmd.none )
+                        in
+                        ( guessingModel
+                        , Cmd.batch [ Cmd.map ToastMsg guessingCmd, saveGameHistory <| encodeGameHistory guessingModel ]
+                        )
+
+            Err str ->
+                genToast str model
+                    |> Tuple.mapSecond (Cmd.map ToastMsg)
+
+    else
+        ( model, Cmd.none )
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         OnClick c ->
-            ( { model
-                | usrInp =
-                    if not <| isGuessing model.state then
-                        model.usrInp
-
-                    else
-                        let
-                            allValidChar : Set Char
-                            allValidChar =
-                                "qwertyuiopasdfghjklzxcvbnm"
-                                    |> String.toList
-                                    |> Set.fromList
-
-                            validChar : Char -> Bool
-                            validChar =
-                                flip Set.member allValidChar
-                        in
-                        model.usrInp
-                            ++ String.fromChar c
-                            |> String.filter validChar
-                            |> String.slice 0 maxLetters
-              }
-            , Cmd.none
-            )
+            handleOnClick c model
 
         Submit ->
-            let
-                startNewRound : ( Model, Cmd Toast.Msg ) -> ( Model, Cmd Toast.Msg )
-                startNewRound ( mdl, cmd ) =
-                    ( { mdl | attempts = mdl.attempts ++ [ mdl.usrInp ], usrInp = "" }, cmd )
-            in
-            if isGuessing model.state then
-                let
-                    result : Result String GameState
-                    result =
-                        validateInput model.word model.attempts model.usrInp
-                in
-                case result of
-                    Ok gmSt ->
-                        case gmSt of
-                            Won ->
-                                let
-                                    ( winModel, winCmd ) =
-                                        winToast model
-                                            |> startNewRound
-                                            |> Tuple.mapFirst updateWin
-                                in
-                                ( winModel
-                                , Cmd.batch [ Cmd.map ToastMsg winCmd, saveGameHistory <| encodeGameHistory winModel ]
-                                )
-
-                            Loss ->
-                                let
-                                    ( lossModel, lossCmd ) =
-                                        lossToast model
-                                            |> startNewRound
-                                            |> Tuple.mapFirst updateLoss
-                                in
-                                ( lossModel
-                                , Cmd.batch [ Cmd.map ToastMsg lossCmd, saveGameHistory <| encodeGameHistory lossModel ]
-                                )
-
-                            Guessing ->
-                                let
-                                    ( guessingModel, guessingCmd ) =
-                                        startNewRound ( model, Cmd.none )
-                                in
-                                ( guessingModel
-                                , Cmd.batch [ Cmd.map ToastMsg guessingCmd, saveGameHistory <| encodeGameHistory guessingModel ]
-                                )
-
-                    Err str ->
-                        genToast str model
-                            |> Tuple.mapSecond (Cmd.map ToastMsg)
-
-            else
-                ( model, Cmd.none )
+            handleSubmit model
 
         BckSpace ->
             ( { model | usrInp = String.dropRight 1 model.usrInp }, Cmd.none )
