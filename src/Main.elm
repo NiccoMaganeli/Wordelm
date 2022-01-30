@@ -880,10 +880,14 @@ generateClipboard { attempts, state, word } =
                 NoState _ ->
                     ""
 
+        squareRow : String -> String
+        squareRow =
+            String.join "" << List.map whichSquare << checkWord word << String.toList
+
         attemptsText : String
         attemptsText =
             attempts
-                |> List.map (String.join "" << List.map whichSquare << checkWord word << String.toList)
+                |> List.map squareRow
                 |> String.join "\n"
     in
     "Wordelm " ++ attemptsNumber ++ "/6\n\n" ++ attemptsText
